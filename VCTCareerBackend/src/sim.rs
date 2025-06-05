@@ -189,10 +189,20 @@ impl ValorantSimulation {
         self.record_event(GameEvent::MatchStart { timestamp: self.current_timestamp });
 
         const MAX_ROUNDS_REGULAR: u8 = 24;
+        const SWITCH_SIDES_AFTER: u8 = 12;
         const WIN_SCORE_REGULAR: u8 = 13;
         const WIN_MARGIN_OVERTIME: u8 = 2;
 
         loop {
+            if self.current_round == SWITCH_SIDES_AFTER {
+                for player in self.players.values_mut() {
+                    player.team = match player.team {
+                        Team::Attackers => Team::Defenders,
+                        Team::Defenders => Team::Attackers,
+                    };
+                }
+            }
+            
             self.current_round += 1;
             self.advance_time(5000);
 
