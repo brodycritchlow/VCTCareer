@@ -36,7 +36,7 @@ fn main() {
     let get_team = |id: u32| -> Team {
         team_lookup.get(&id)
             .cloned()
-            .ok_or_else(|| format!("No team found for player id {}", id))
+            .expect(&format!("Player ID {} not found in simulation", id))
     };
 
     for event in sim.events {
