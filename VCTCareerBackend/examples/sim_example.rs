@@ -34,10 +34,9 @@ fn main() {
         .collect();
 
     let get_team = |id: u32| -> Team {
-        match team_lookup.get(&id) {
-            Some(team) => team.clone(),
-            None => panic!("No team found for player id {}", id),
-        }
+        team_lookup.get(&id)
+            .cloned()
+            .ok_or_else(|| format!("No team found for player id {}", id))
     };
 
     for event in sim.events {
