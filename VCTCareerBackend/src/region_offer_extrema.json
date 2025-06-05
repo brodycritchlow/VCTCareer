@@ -1,0 +1,6 @@
+{
+  "Americas": {"min": 50000, "max": 600000, "plus_minus": 25000},
+  "China": {"min": 60000, "max": 700000, "plus_minus": 35000},
+  "EMEA": {"min": 120000, "max": 360000, "plus_minus": 15000},
+  "Pacific": {"min": 60000, "max": 240000, "plus_minus": 10000}
+}
