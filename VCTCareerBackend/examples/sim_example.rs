@@ -1,5 +1,5 @@
 use VCTCareerBackend::sim::{ValorantSimulation, Player, Agent, Team};
-
+use std::collections::HashMap;
 
 fn colorize_player_id(id: u32, team: Team) -> String {
     match team {
@@ -28,8 +28,16 @@ fn main() {
     sim.run_simulation();
 
     // Helper closure to get a player's team by id
+    let team_lookup: HashMap<u32, Team> = sim.players
+        .iter()
+        .map(|(_, p)| (p.id, p.team.clone()))
+        .collect();
+
     let get_team = |id: u32| -> Team {
-        sim.players.iter().find(|(_, p)| p.id == id).unwrap().1.team.clone()
+        match team_lookup.get(&id) {
+            Some(team) => team.clone(),
+            None => panic!("No team found for player id {}", id),
+        }
     };
 
     for event in sim.events {
