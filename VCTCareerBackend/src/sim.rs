@@ -50,10 +50,10 @@ impl Player {
             current_armor: 0,
             is_alive: true,
             current_credits: 0,
-            aim_skill: aim.clamp(0.0, 1.0),
-            hs_skill: hs.clamp(0.0, 1.0),
-            movement_skill: movement.clamp(0.0, 1.0),
-            util_skill: util.clamp(0.0, 1.0),
+            aim_skill: aim.clamp(0.0, 100.0),
+            hs_skill: hs.clamp(0.0, 100.0),
+            movement_skill: movement.clamp(0.0, 100.0),
+            util_skill: util.clamp(0.0, 100.0),
         }
     }
 
