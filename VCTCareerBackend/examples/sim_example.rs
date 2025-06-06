@@ -1,10 +1,10 @@
 use VCTCareerBackend::sim::{ValorantSimulation, Player, Agent, Team};
-use std::collections::HashMap;
 
-fn colorize_player_id(id: u32, team: Team) -> String {
-    match team {
-        Team::Attackers => format!("\x1b[31m{}\x1b[0m", id), // Red for attackers
-        Team::Defenders => format!("\x1b[34m{}\x1b[0m", id), // Blue for defenders
+fn colorize_player_id(id: u32) -> String {
+    if id <= 5 {
+        format!("\x1b[34m{}\x1b[0m", id) // Blue for attackers
+    } else {
+        format!("\x1b[31m{}\x1b[0m", id) // Red for defenders
     }
 }
 
@@ -27,18 +27,6 @@ fn main() {
 
     sim.run_simulation();
 
-    // Helper closure to get a player's team by id
-    let team_lookup: HashMap<u32, Team> = sim.players
-        .iter()
-        .map(|(_, p)| (p.id, p.team.clone()))
-        .collect();
-
-    let get_team = |id: u32| -> Team {
-        team_lookup.get(&id)
-            .cloned()
-            .expect(&format!("Player ID {} not found in simulation", id))
-    };
-
     for event in sim.events {
         match event {
             VCTCareerBackend::sim::GameEvent::MatchStart { timestamp } => {
@@ -47,6 +35,12 @@ fn main() {
             VCTCareerBackend::sim::GameEvent::MatchEnd { timestamp, winning_team, score_attackers, score_defenders } => {
                 println!("[{}] Match End - Winner: {:?} | Final Score: {}-{}", timestamp, winning_team, score_attackers, score_defenders);
             }
+            VCTCareerBackend::sim::GameEvent::BuyPhaseStart { timestamp, round_number } => {
+                println!("[{}] Round {} Buy Phase Start", timestamp, round_number);
+            }
+            VCTCareerBackend::sim::GameEvent::BuyPhaseEnd { timestamp, round_number } => {
+                println!("[{}] Round {} Buy Phase End", timestamp, round_number);
+            }
             VCTCareerBackend::sim::GameEvent::RoundStart { timestamp, round_number, attacker_credits_start, defender_credits_start } => {
                 println!("[{}] Round {} Start | Attacker Credits: {} | Defender Credits: {}", timestamp, round_number, attacker_credits_start, defender_credits_start);
             }
@@ -54,48 +48,22 @@ fn main() {
                 println!("[{}] Round {} End - Winner: {:?} | Reason: {:?}", timestamp, round_number, winning_team, reason);
             }
             VCTCareerBackend::sim::GameEvent::Kill { timestamp, killer_id, victim_id, weapon, is_headshot } => {
-                println!(
-                    "[{}] Kill: Player {} -> Player {} with {:?}{}",
-                    timestamp,
-                    colorize_player_id(killer_id, get_team(killer_id)),
-                    colorize_player_id(victim_id, get_team(victim_id)),
-                    weapon,
-                    if is_headshot {" (HS)"} else {""}
-                );
+                println!("[{}] Kill: Player {} -> Player {} with {:?}{}", timestamp, colorize_player_id(killer_id), colorize_player_id(victim_id), weapon, if is_headshot {" (HS)"} else {""});
             }
             VCTCareerBackend::sim::GameEvent::Damage { timestamp, attacker_id, victim_id, amount, weapon, is_headshot } => {
-                println!(
-                    "[{}] Damage: Player {} -> Player {} | {} dmg with {:?}{}",
-                    timestamp,
-                    colorize_player_id(attacker_id, get_team(attacker_id)),
-                    colorize_player_id(victim_id, get_team(victim_id)),
-                    amount,
-                    weapon,
-                    if is_headshot {" (HS)"} else {""}
-                );
+                println!("[{}] Damage: Player {} -> Player {} | {} dmg with {:?}{}", timestamp, colorize_player_id(attacker_id), colorize_player_id(victim_id), amount, weapon, if is_headshot {" (HS)"} else {""});
             }
             VCTCareerBackend::sim::GameEvent::SpikePlant { timestamp, planter_id } => {
-                println!(
-                    "[{}] Spike Planted by Player {}",
-                    timestamp,
-                    colorize_player_id(planter_id, get_team(planter_id))
-                );
+                println!("[{}] Spike Planted by Player {}", timestamp, colorize_player_id(planter_id));
             }
             VCTCareerBackend::sim::GameEvent::SpikeDefuse { timestamp, defuser_id, successful } => {
-                println!(
-                    "[{}] Spike Defuse by Player {} | Successful: {}",
-                    timestamp,
-                    colorize_player_id(defuser_id, get_team(defuser_id)),
-                    successful
-                );
+                println!("[{}] Spike Defuse by Player {} | Successful: {}", timestamp, colorize_player_id(defuser_id), successful);
             }
             VCTCareerBackend::sim::GameEvent::AbilityUsed { timestamp, player_id, ability_name } => {
-                println!(
-                    "[{}] Ability Used: Player {} -> {}",
-                    timestamp,
-                    colorize_player_id(player_id, get_team(player_id)),
-                    ability_name
-                );
+                println!("[{}] Ability Used: Player {} -> {}", timestamp, colorize_player_id(player_id), ability_name);
+            }
+            VCTCareerBackend::sim::GameEvent::SideSwap { timestamp, round_number } => {
+                println!("[{}] Side Swap at Round {} - Teams switching sides", timestamp, round_number);
             }
         }
     }
