@@ -1,8 +1,11 @@
 use uuid::Uuid;
 use VCTCareerBackend::simulation_manager::{
-    create_simulation_manager, create_simulation, get_simulation_state, advance_simulation,
-    control_simulation, get_simulation_events, get_simulation_stats, get_events_by_round,
-    get_events_by_player, get_events_by_type, get_events_since, get_round_summary
+    create_simulation_manager, create_simulation, get_simulation_state, 
+    advance_simulation_legacy, control_simulation_legacy, 
+    get_simulation_events_legacy, get_simulation_stats_legacy, 
+    get_events_by_round_legacy, get_events_by_player_legacy, 
+    get_events_by_type_legacy, get_events_since_legacy, 
+    get_round_summary_legacy
 };
 use VCTCareerBackend::models::{SimulationPlayer, EventFilterRequest};
 use VCTCareerBackend::sim::GameEvent;
@@ -162,11 +165,11 @@ fn test_get_simulation_state_success() {
     let players = create_mock_players();
     let simulation_id = create_simulation(&manager, players).unwrap();
     
-    let result = get_simulation_state(&manager, simulation_id);
+    let result = get_simulation_state(&manager, &simulation_id);
     assert!(result.is_ok());
     
     let state = result.unwrap();
-    assert_eq!(state.current_round, 1);
+    assert_eq!(state.current_round, 0); // Simulation hasn't started yet
     assert_eq!(state.attacker_score, 0);
     assert_eq!(state.defender_score, 0);
 }
@@ -175,7 +178,7 @@ fn test_get_simulation_state_success() {
 fn test_get_simulation_state_invalid_id() {
     let manager = create_simulation_manager();
     
-    let result = get_simulation_state(&manager, "invalid-id".to_string());
+    let result = get_simulation_state(&manager, "invalid-id");
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Invalid simulation ID format"));
 }
@@ -185,7 +188,7 @@ fn test_get_simulation_state_not_found() {
     let manager = create_simulation_manager();
     let fake_id = Uuid::new_v4().to_string();
     
-    let result = get_simulation_state(&manager, fake_id);
+    let result = get_simulation_state(&manager, &fake_id);
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Simulation not found"));
 }
@@ -196,13 +199,13 @@ fn test_advance_simulation_tick() {
     let players = create_mock_players();
     let simulation_id = create_simulation(&manager, players).unwrap();
     
-    let initial_state = get_simulation_state(&manager, simulation_id.clone()).unwrap();
+    let initial_state = get_simulation_state(&manager, &simulation_id).unwrap();
     let initial_tick = initial_state.tick_count;
     
-    let result = advance_simulation(&manager, simulation_id.clone(), Some(5), Some("tick".to_string()));
+    let result = advance_simulation_legacy(&manager, simulation_id.clone(), Some(5), Some("tick".to_string()));
     assert!(result.is_ok());
     
-    let updated_state = get_simulation_state(&manager, simulation_id).unwrap();
+    let updated_state = get_simulation_state(&manager, &simulation_id).unwrap();
     assert!(updated_state.tick_count > initial_tick);
 }
 
@@ -212,11 +215,11 @@ fn test_advance_simulation_round() {
     let players = create_mock_players();
     let simulation_id = create_simulation(&manager, players).unwrap();
     
-    let result = advance_simulation(&manager, simulation_id.clone(), None, Some("round".to_string()));
+    let result = advance_simulation_legacy(&manager, simulation_id.clone(), None, Some("round".to_string()));
     assert!(result.is_ok());
     
     // After advancing a round, we should have some events
-    let events = get_simulation_events(&manager, simulation_id, EventFilterRequest {
+    let events = get_simulation_events_legacy(&manager, simulation_id, EventFilterRequest {
         event_types: None,
         player_ids: None,
         round_numbers: None,
@@ -234,11 +237,11 @@ fn test_control_simulation_pause_resume() {
     let simulation_id = create_simulation(&manager, players).unwrap();
     
     // Test pause
-    let result = control_simulation(&manager, simulation_id.clone(), "pause".to_string(), None);
+    let result = control_simulation_legacy(&manager, simulation_id.clone(), "pause".to_string(), None);
     assert!(result.is_ok());
     
     // Test resume
-    let result = control_simulation(&manager, simulation_id, "resume".to_string(), None);
+    let result = control_simulation_legacy(&manager, simulation_id, "resume".to_string(), None);
     assert!(result.is_ok());
 }
 
@@ -248,7 +251,7 @@ fn test_control_simulation_set_speed() {
     let players = create_mock_players();
     let simulation_id = create_simulation(&manager, players).unwrap();
     
-    let result = control_simulation(&manager, simulation_id, "set_speed".to_string(), Some(2.0));
+    let result = control_simulation_legacy(&manager, simulation_id, "set_speed".to_string(), Some(2.0));
     assert!(result.is_ok());
 }
 
@@ -258,7 +261,7 @@ fn test_control_simulation_set_speed_missing_value() {
     let players = create_mock_players();
     let simulation_id = create_simulation(&manager, players).unwrap();
     
-    let result = control_simulation(&manager, simulation_id, "set_speed".to_string(), None);
+    let result = control_simulation_legacy(&manager, simulation_id, "set_speed".to_string(), None);
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Speed value required"));
 }
@@ -269,7 +272,7 @@ fn test_control_simulation_invalid_action() {
     let players = create_mock_players();
     let simulation_id = create_simulation(&manager, players).unwrap();
     
-    let result = control_simulation(&manager, simulation_id, "invalid_action".to_string(), None);
+    let result = control_simulation_legacy(&manager, simulation_id, "invalid_action".to_string(), None);
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Invalid action"));
 }
@@ -281,7 +284,7 @@ fn test_get_simulation_events() {
     let simulation_id = create_simulation(&manager, players).unwrap();
     
     // Advance simulation to generate events
-    advance_simulation(&manager, simulation_id.clone(), Some(10), Some("tick".to_string())).unwrap();
+    advance_simulation_legacy(&manager, simulation_id.clone(), Some(10), Some("tick".to_string())).unwrap();
     
     let filter = EventFilterRequest {
         event_types: None,
@@ -291,7 +294,7 @@ fn test_get_simulation_events() {
         end_timestamp: None,
     };
     
-    let result = get_simulation_events(&manager, simulation_id, filter);
+    let result = get_simulation_events_legacy(&manager, simulation_id, filter);
     assert!(result.is_ok());
     
     let events = result.unwrap();
@@ -304,7 +307,7 @@ fn test_get_simulation_stats() {
     let players = create_mock_players();
     let simulation_id = create_simulation(&manager, players).unwrap();
     
-    let result = get_simulation_stats(&manager, simulation_id);
+    let result = get_simulation_stats_legacy(&manager, simulation_id);
     assert!(result.is_ok());
     
     let stats = result.unwrap();
@@ -326,9 +329,9 @@ fn test_get_events_by_round() {
     let simulation_id = create_simulation(&manager, players).unwrap();
     
     // Advance to generate round events
-    advance_simulation(&manager, simulation_id.clone(), None, Some("round".to_string())).unwrap();
+    advance_simulation_legacy(&manager, simulation_id.clone(), None, Some("round".to_string())).unwrap();
     
-    let result = get_events_by_round(&manager, simulation_id, 1);
+    let result = get_events_by_round_legacy(&manager, simulation_id, 1);
     assert!(result.is_ok());
     
     let events = result.unwrap();
@@ -351,9 +354,9 @@ fn test_get_events_by_player() {
     let simulation_id = create_simulation(&manager, players).unwrap();
     
     // Advance to generate events
-    advance_simulation(&manager, simulation_id.clone(), Some(20), Some("tick".to_string())).unwrap();
+    advance_simulation_legacy(&manager, simulation_id.clone(), Some(20), Some("tick".to_string())).unwrap();
     
-    let result = get_events_by_player(&manager, simulation_id, 1);
+    let result = get_events_by_player_legacy(&manager, simulation_id, 1);
     assert!(result.is_ok());
     
     let events = result.unwrap();
@@ -369,9 +372,9 @@ fn test_get_events_by_type() {
     let simulation_id = create_simulation(&manager, players).unwrap();
     
     // Advance to generate events
-    advance_simulation(&manager, simulation_id.clone(), None, Some("round".to_string())).unwrap();
+    advance_simulation_legacy(&manager, simulation_id.clone(), None, Some("round".to_string())).unwrap();
     
-    let result = get_events_by_type(&manager, simulation_id, "RoundStart".to_string());
+    let result = get_events_by_type_legacy(&manager, simulation_id, "RoundStart".to_string());
     assert!(result.is_ok());
     
     let events = result.unwrap();
@@ -391,10 +394,10 @@ fn test_get_events_since() {
     let simulation_id = create_simulation(&manager, players).unwrap();
     
     // Advance to generate events
-    advance_simulation(&manager, simulation_id.clone(), Some(10), Some("tick".to_string())).unwrap();
+    advance_simulation_legacy(&manager, simulation_id.clone(), Some(10), Some("tick".to_string())).unwrap();
     
     // Get events since timestamp 0 (should get all events)
-    let result = get_events_since(&manager, simulation_id, 0);
+    let result = get_events_since_legacy(&manager, simulation_id, 0);
     assert!(result.is_ok());
     
     let events = result.unwrap();
@@ -408,9 +411,9 @@ fn test_get_round_summary() {
     let simulation_id = create_simulation(&manager, players).unwrap();
     
     // Advance through a complete round
-    advance_simulation(&manager, simulation_id.clone(), None, Some("round".to_string())).unwrap();
+    advance_simulation_legacy(&manager, simulation_id.clone(), None, Some("round".to_string())).unwrap();
     
-    let result = get_round_summary(&manager, simulation_id, 1);
+    let result = get_round_summary_legacy(&manager, simulation_id, 1);
     assert!(result.is_ok());
     
     let summary = result.unwrap();
@@ -426,7 +429,7 @@ fn test_get_round_summary_nonexistent_round() {
     let simulation_id = create_simulation(&manager, players).unwrap();
     
     // Try to get summary for round 255 (should not exist)
-    let result = get_round_summary(&manager, simulation_id, 255);
+    let result = get_round_summary_legacy(&manager, simulation_id, 255);
     assert!(result.is_ok());
     
     let summary = result.unwrap();
@@ -444,29 +447,29 @@ fn test_simulation_integration_flow() {
     let simulation_id = create_simulation(&manager, players).unwrap();
     
     // Get initial state
-    let initial_state = get_simulation_state(&manager, simulation_id.clone()).unwrap();
-    assert_eq!(initial_state.current_round, 1);
+    let initial_state = get_simulation_state(&manager, &simulation_id).unwrap();
+    assert_eq!(initial_state.current_round, 0); // Simulation hasn't started yet
     assert_eq!(initial_state.attacker_score, 0);
     assert_eq!(initial_state.defender_score, 0);
     
     // Advance some ticks
-    advance_simulation(&manager, simulation_id.clone(), Some(5), Some("tick".to_string())).unwrap();
+    advance_simulation_legacy(&manager, simulation_id.clone(), Some(5), Some("tick".to_string())).unwrap();
     
     // Check state updated
-    let updated_state = get_simulation_state(&manager, simulation_id.clone()).unwrap();
+    let updated_state = get_simulation_state(&manager, &simulation_id).unwrap();
     assert!(updated_state.tick_count > initial_state.tick_count);
     
     // Pause simulation
-    control_simulation(&manager, simulation_id.clone(), "pause".to_string(), None).unwrap();
+    control_simulation_legacy(&manager, simulation_id.clone(), "pause".to_string(), None).unwrap();
     
     // Set playback speed
-    control_simulation(&manager, simulation_id.clone(), "set_speed".to_string(), Some(2.0)).unwrap();
+    control_simulation_legacy(&manager, simulation_id.clone(), "set_speed".to_string(), Some(2.0)).unwrap();
     
     // Resume simulation
-    control_simulation(&manager, simulation_id.clone(), "resume".to_string(), None).unwrap();
+    control_simulation_legacy(&manager, simulation_id.clone(), "resume".to_string(), None).unwrap();
     
     // Get player stats
-    let stats = get_simulation_stats(&manager, simulation_id.clone()).unwrap();
+    let stats = get_simulation_stats_legacy(&manager, simulation_id.clone()).unwrap();
     assert_eq!(stats.len(), 10);
     
     // Get events
@@ -477,6 +480,6 @@ fn test_simulation_integration_flow() {
         start_timestamp: None,
         end_timestamp: None,
     };
-    let events = get_simulation_events(&manager, simulation_id, filter).unwrap();
+    let events = get_simulation_events_legacy(&manager, simulation_id, filter).unwrap();
     assert!(!events.is_empty());
 }

@@ -25,7 +25,7 @@ fn main() {
     sim.add_player(Player::new(9, "Raze D".to_string(), Agent::Raze, Team::Defenders, 0.85, 0.75, 0.65, 0.7));
     sim.add_player(Player::new(10, "Breach D".to_string(), Agent::Breach, Team::Defenders, 0.7, 0.6, 0.7, 0.75));
 
-    sim.run_simulation();
+    sim.run_simulation_to_completion();
 
     for event in sim.events {
         match event {

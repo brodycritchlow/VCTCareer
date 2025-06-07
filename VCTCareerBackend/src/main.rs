@@ -367,7 +367,7 @@ async fn control_simulation(
     request: web::Json<SimulationControlRequest>
 ) -> impl Responder {
     let simulation_id = path.into_inner();
-    match simulation_manager::control_simulation(
+    match simulation_manager::control_simulation_legacy(
         &sim_manager, 
         simulation_id, 
         request.action.clone(), 
@@ -400,7 +400,16 @@ async fn get_simulation_events(
     query: web::Query<EventFilterRequest>
 ) -> impl Responder {
     let simulation_id = path.into_inner();
-    match simulation_manager::get_simulation_events(&sim_manager, simulation_id, query.into_inner()) {
+    let filter = query.into_inner();
+    // Convert local EventFilterRequest to the one expected by simulation_manager
+    let sim_filter = VCTCareerBackend::models::EventFilterRequest {
+        event_types: filter.event_types,
+        player_ids: filter.player_ids,
+        round_numbers: filter.round_numbers,
+        start_timestamp: filter.start_timestamp,
+        end_timestamp: filter.end_timestamp,
+    };
+    match simulation_manager::get_simulation_events_legacy(&sim_manager, simulation_id, sim_filter) {
         Ok(events) => HttpResponse::Ok().json(events),
         Err(e) => HttpResponse::NotFound().body(e),
     }
@@ -423,10 +432,122 @@ async fn get_simulation_stats(
     path: web::Path<String>
 ) -> impl Responder {
     let simulation_id = path.into_inner();
-    match simulation_manager::get_simulation_stats(&sim_manager, simulation_id) {
+    match simulation_manager::get_simulation_stats_legacy(&sim_manager, simulation_id) {
         Ok(stats) => HttpResponse::Ok().json(stats),
         Err(e) => HttpResponse::NotFound().body(e),
     }
+}
+
+// Phase 2 API Endpoints
+#[utoipa::path(
+    get,
+    path = "/simulation/{id}/live-stats",
+    responses(
+        (status = 200, description = "Live match statistics", body = VCTCareerBackend::simulation_manager::LiveStats),
+        (status = 404, description = "Simulation not found", body = String),
+    )
+)]
+#[get("/simulation/{id}/live-stats")]
+async fn get_live_stats(
+    sim_manager: web::Data<SimulationManager>,
+    path: web::Path<String>
+) -> impl Responder {
+    let simulation_id = path.into_inner();
+    match simulation_manager::get_live_stats_legacy(&sim_manager, simulation_id) {
+        Ok(stats) => HttpResponse::Ok().json(stats),
+        Err(e) => HttpResponse::NotFound().body(e),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/simulation/{id}/scoreboard",
+    responses(
+        (status = 200, description = "Match scoreboard", body = VCTCareerBackend::simulation_manager::Scoreboard),
+        (status = 404, description = "Simulation not found", body = String),
+    )
+)]
+#[get("/simulation/{id}/scoreboard")]
+async fn get_scoreboard(
+    sim_manager: web::Data<SimulationManager>,
+    path: web::Path<String>
+) -> impl Responder {
+    let simulation_id = path.into_inner();
+    match simulation_manager::get_scoreboard_legacy(&sim_manager, simulation_id) {
+        Ok(scoreboard) => HttpResponse::Ok().json(scoreboard),
+        Err(e) => HttpResponse::NotFound().body(e),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/simulation/{id}/economy",
+    responses(
+        (status = 200, description = "Economy status", body = VCTCareerBackend::simulation_manager::EconomyStatus),
+        (status = 404, description = "Simulation not found", body = String),
+    )
+)]
+#[get("/simulation/{id}/economy")]
+async fn get_economy_status(
+    sim_manager: web::Data<SimulationManager>,
+    path: web::Path<String>
+) -> impl Responder {
+    let simulation_id = path.into_inner();
+    match simulation_manager::get_economy_status_legacy(&sim_manager, simulation_id) {
+        Ok(economy) => HttpResponse::Ok().json(economy),
+        Err(e) => HttpResponse::NotFound().body(e),
+    }
+}
+
+// Phase 3 API Endpoints
+#[utoipa::path(
+    post,
+    path = "/simulation/{id}/checkpoint",
+    responses(
+        (status = 200, description = "Checkpoint created", body = String),
+        (status = 404, description = "Simulation not found", body = String),
+    )
+)]
+#[post("/simulation/{id}/checkpoint")]
+async fn create_checkpoint(
+    sim_manager: web::Data<SimulationManager>,
+    path: web::Path<String>,
+    description: Option<web::Json<String>>
+) -> impl Responder {
+    let simulation_id = path.into_inner();
+    let desc = description.map(|d| d.into_inner());
+    match simulation_manager::create_checkpoint_legacy(&sim_manager, simulation_id, desc) {
+        Ok(checkpoint_id) => HttpResponse::Ok().json(checkpoint_id),
+        Err(e) => HttpResponse::BadRequest().body(e),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/simulation/{id}/events/at/{timestamp}",
+    responses(
+        (status = 200, description = "Events at timestamp", body = Vec<VCTCareerBackend::sim::GameEvent>),
+        (status = 404, description = "Simulation not found", body = String),
+    )
+)]
+#[get("/simulation/{id}/events/at/{timestamp}")]
+async fn get_events_at_timestamp(
+    sim_manager: web::Data<SimulationManager>,
+    path: web::Path<(String, u64)>,
+    query: web::Query<TimestampQuery>
+) -> impl Responder {
+    let (simulation_id, timestamp) = path.into_inner();
+    let window = query.window_ms.unwrap_or(5000); // Default 5 second window
+    
+    match simulation_manager::get_events_at_timestamp_legacy(&sim_manager, simulation_id, timestamp, window) {
+        Ok(events) => HttpResponse::Ok().json(events),
+        Err(e) => HttpResponse::NotFound().body(e),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct TimestampQuery {
+    window_ms: Option<u64>,
 }
 
 #[actix_web::main]
@@ -490,6 +611,13 @@ async fn main() -> std::io::Result<()> {
             .service(control_simulation)
             .service(get_simulation_events)
             .service(get_simulation_stats)
+            // Phase 2 endpoints
+            .service(get_live_stats)
+            .service(get_scoreboard)
+            .service(get_economy_status)
+            // Phase 3 endpoints
+            .service(create_checkpoint)
+            .service(get_events_at_timestamp)
             .into_utoipa_app()
             .openapi(ApiDoc::openapi())
             .openapi_service(|api| {
