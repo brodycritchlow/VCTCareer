@@ -1,32 +1,33 @@
-mod models;
 mod db;
+mod models;
 mod offers;
 
+use crate::db::weighted_tier;
+use crate::db::{TeamQuery, get_teams_handler};
+use crate::models::{
+    AdvanceSimulationRequest, CareerInfo, CreateSimulationRequest, CreateSimulationResponse,
+    EventFilterRequest, SimulationControlRequest,
+};
+use crate::offers::OfferRequest;
+use VCTCareerBackend::ranked::{
+    MapPoolRequest, MatchInput, RandomMapResponse, RankTier, RrEstimateResponse, estimate_rr_change,
+};
+use VCTCareerBackend::sim::{Agent, Player, Team, ValorantSimulation};
+use VCTCareerBackend::simulation_manager;
 use actix_cors::Cors;
 use actix_web::post;
-use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
-use dotenv::dotenv;
+use actix_web::{App, HttpResponse, HttpServer, Responder, get, web};
 use deadpool_postgres::{Manager, Pool};
+use dotenv::dotenv;
 use log::debug;
 use rand::seq::{IndexedRandom, SliceRandom};
-use rand::rng;
-use tokio_postgres::NoTls;
-use tokio_postgres::Config;
-use utoipa::{
-    openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
-    Modify, OpenApi,
-};
-use utoipa_actix_web::AppExt;
-use VCTCareerBackend::ranked::{estimate_rr_change, MapPoolRequest, MatchInput, RandomMapResponse, RankTier, RrEstimateResponse};
-use std::str::FromStr;
-use crate::db::weighted_tier;
-use crate::offers::OfferRequest;
-use crate::db::{TeamQuery, get_teams_handler};
-use crate::models::{CareerInfo, CreateSimulationRequest, CreateSimulationResponse, AdvanceSimulationRequest, SimulationControlRequest, EventFilterRequest};
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use VCTCareerBackend::sim::{ValorantSimulation, Player, Agent, Team};
-use VCTCareerBackend::simulation_manager;
+use tokio_postgres::Config;
+use tokio_postgres::NoTls;
+use utoipa::OpenApi;
+use utoipa_actix_web::AppExt;
 
 type SimulationManager = Arc<Mutex<HashMap<uuid::Uuid, ValorantSimulation>>>;
 
@@ -148,10 +149,7 @@ async fn get_teams(query: web::Query<TeamQuery>) -> impl Responder {
     )
 )]
 #[get("/generateOffers")]
-async fn generate_offers(
-    pool: web::Data<Pool>,
-    query: web::Query<OfferRequest>
-) -> impl Responder {
+async fn generate_offers(pool: web::Data<Pool>, query: web::Query<OfferRequest>) -> impl Responder {
     match offers::generate_offers(pool.get_ref(), &query).await {
         Ok(offers) => HttpResponse::Ok().json(offers),
         Err(e) => HttpResponse::InternalServerError().body(e),
@@ -205,7 +203,7 @@ async fn random_map(query: web::Query<MapPoolRequest>) -> impl Responder {
     }
 
     let mut maps = pool.clone();
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     maps.shuffle(&mut rng);
     let map = maps.choose(&mut rng).unwrap().clone();
 
@@ -226,11 +224,11 @@ async fn random_map(query: web::Query<MapPoolRequest>) -> impl Responder {
 #[post("/simulation/create")]
 async fn create_simulation(
     sim_manager: web::Data<SimulationManager>,
-    request: web::Json<CreateSimulationRequest>
+    request: web::Json<CreateSimulationRequest>,
 ) -> impl Responder {
     let mut sim = ValorantSimulation::new();
     let simulation_id = sim.get_current_state().id;
-    
+
     // Convert and add players to simulation
     for player_data in &request.players {
         let agent = match parse_agent(&player_data.agent) {
@@ -241,7 +239,7 @@ async fn create_simulation(
             Ok(t) => t,
             Err(e) => return HttpResponse::BadRequest().body(e),
         };
-        
+
         let player = Player::new(
             player_data.id,
             player_data.name.clone(),
@@ -252,13 +250,13 @@ async fn create_simulation(
             player_data.movement_skill,
             player_data.util_skill,
         );
-        
+
         sim.add_player(player);
     }
-    
+
     // Store simulation in manager
     sim_manager.lock().unwrap().insert(simulation_id, sim);
-    
+
     HttpResponse::Ok().json(CreateSimulationResponse {
         simulation_id: simulation_id.to_string(),
         message: "Simulation created successfully".to_string(),
@@ -279,14 +277,14 @@ async fn create_simulation(
 #[get("/simulation/{id}/state")]
 async fn get_simulation_state(
     sim_manager: web::Data<SimulationManager>,
-    path: web::Path<String>
+    path: web::Path<String>,
 ) -> impl Responder {
     let simulation_id = path.into_inner();
     let uuid_id = match Uuid::parse_str(&simulation_id) {
         Ok(id) => id,
         Err(_) => return HttpResponse::BadRequest().body("Invalid simulation ID format"),
     };
-    
+
     let simulations = sim_manager.lock().unwrap();
     match simulations.get(&uuid_id) {
         Some(sim) => HttpResponse::Ok().json(sim.get_current_state()),
@@ -311,36 +309,30 @@ async fn get_simulation_state(
 async fn advance_simulation(
     sim_manager: web::Data<SimulationManager>,
     path: web::Path<String>,
-    request: web::Json<AdvanceSimulationRequest>
+    request: web::Json<AdvanceSimulationRequest>,
 ) -> impl Responder {
     let simulation_id = path.into_inner();
     let uuid_id = match Uuid::parse_str(&simulation_id) {
         Ok(id) => id,
         Err(_) => return HttpResponse::BadRequest().body("Invalid simulation ID format"),
     };
-    
+
     let mut simulations = sim_manager.lock().unwrap();
     let sim = match simulations.get_mut(&uuid_id) {
         Some(s) => s,
         None => return HttpResponse::NotFound().body("Simulation not found"),
     };
-    
+
     let result = match request.mode.as_deref() {
         Some("tick") => {
             let tick_count = request.ticks.unwrap_or(1);
             sim.advance_multiple_ticks(tick_count)
         }
-        Some("round") => {
-            sim.advance_round()
-        }
-        Some("match") => {
-            sim.run_simulation_to_completion()
-        }
-        _ => {
-            sim.advance_tick()
-        }
+        Some("round") => sim.advance_round(),
+        Some("match") => sim.run_simulation_to_completion(),
+        _ => sim.advance_tick(),
     };
-    
+
     match result {
         Ok(()) => HttpResponse::Ok().body("Simulation advanced successfully"),
         Err(e) => HttpResponse::BadRequest().body(e),
@@ -364,14 +356,14 @@ async fn advance_simulation(
 async fn control_simulation(
     sim_manager: web::Data<SimulationManager>,
     path: web::Path<String>,
-    request: web::Json<SimulationControlRequest>
+    request: web::Json<SimulationControlRequest>,
 ) -> impl Responder {
     let simulation_id = path.into_inner();
     match simulation_manager::control_simulation_legacy(
-        &sim_manager, 
-        simulation_id, 
-        request.action.clone(), 
-        request.speed
+        &sim_manager,
+        simulation_id,
+        request.action.clone(),
+        request.speed,
     ) {
         Ok(()) => HttpResponse::Ok().body("Control applied successfully"),
         Err(e) => HttpResponse::BadRequest().body(e),
@@ -397,7 +389,7 @@ async fn control_simulation(
 async fn get_simulation_events(
     sim_manager: web::Data<SimulationManager>,
     path: web::Path<String>,
-    query: web::Query<EventFilterRequest>
+    query: web::Query<EventFilterRequest>,
 ) -> impl Responder {
     let simulation_id = path.into_inner();
     let filter = query.into_inner();
@@ -409,7 +401,8 @@ async fn get_simulation_events(
         start_timestamp: filter.start_timestamp,
         end_timestamp: filter.end_timestamp,
     };
-    match simulation_manager::get_simulation_events_legacy(&sim_manager, simulation_id, sim_filter) {
+    match simulation_manager::get_simulation_events_legacy(&sim_manager, simulation_id, sim_filter)
+    {
         Ok(events) => HttpResponse::Ok().json(events),
         Err(e) => HttpResponse::NotFound().body(e),
     }
@@ -429,7 +422,7 @@ async fn get_simulation_events(
 #[get("/simulation/{id}/stats")]
 async fn get_simulation_stats(
     sim_manager: web::Data<SimulationManager>,
-    path: web::Path<String>
+    path: web::Path<String>,
 ) -> impl Responder {
     let simulation_id = path.into_inner();
     match simulation_manager::get_simulation_stats_legacy(&sim_manager, simulation_id) {
@@ -450,7 +443,7 @@ async fn get_simulation_stats(
 #[get("/simulation/{id}/live-stats")]
 async fn get_live_stats(
     sim_manager: web::Data<SimulationManager>,
-    path: web::Path<String>
+    path: web::Path<String>,
 ) -> impl Responder {
     let simulation_id = path.into_inner();
     match simulation_manager::get_live_stats_legacy(&sim_manager, simulation_id) {
@@ -470,7 +463,7 @@ async fn get_live_stats(
 #[get("/simulation/{id}/scoreboard")]
 async fn get_scoreboard(
     sim_manager: web::Data<SimulationManager>,
-    path: web::Path<String>
+    path: web::Path<String>,
 ) -> impl Responder {
     let simulation_id = path.into_inner();
     match simulation_manager::get_scoreboard_legacy(&sim_manager, simulation_id) {
@@ -490,7 +483,7 @@ async fn get_scoreboard(
 #[get("/simulation/{id}/economy")]
 async fn get_economy_status(
     sim_manager: web::Data<SimulationManager>,
-    path: web::Path<String>
+    path: web::Path<String>,
 ) -> impl Responder {
     let simulation_id = path.into_inner();
     match simulation_manager::get_economy_status_legacy(&sim_manager, simulation_id) {
@@ -512,7 +505,7 @@ async fn get_economy_status(
 async fn create_checkpoint(
     sim_manager: web::Data<SimulationManager>,
     path: web::Path<String>,
-    description: Option<web::Json<String>>
+    description: Option<web::Json<String>>,
 ) -> impl Responder {
     let simulation_id = path.into_inner();
     let desc = description.map(|d| d.into_inner());
@@ -534,12 +527,17 @@ async fn create_checkpoint(
 async fn get_events_at_timestamp(
     sim_manager: web::Data<SimulationManager>,
     path: web::Path<(String, u64)>,
-    query: web::Query<TimestampQuery>
+    query: web::Query<TimestampQuery>,
 ) -> impl Responder {
     let (simulation_id, timestamp) = path.into_inner();
     let window = query.window_ms.unwrap_or(5000); // Default 5 second window
-    
-    match simulation_manager::get_events_at_timestamp_legacy(&sim_manager, simulation_id, timestamp, window) {
+
+    match simulation_manager::get_events_at_timestamp_legacy(
+        &sim_manager,
+        simulation_id,
+        timestamp,
+        window,
+    ) {
         Ok(events) => HttpResponse::Ok().json(events),
         Err(e) => HttpResponse::NotFound().body(e),
     }
@@ -555,10 +553,10 @@ async fn main() -> std::io::Result<()> {
     #[derive(OpenApi)]
     #[openapi(
         paths(
-            create_career, 
-            get_teams, 
-            generate_offers, 
-            estimate_rr, 
+            create_career,
+            get_teams,
+            generate_offers,
+            estimate_rr,
             random_map,
             create_simulation,
             get_simulation_state,
@@ -572,38 +570,36 @@ async fn main() -> std::io::Result<()> {
             create_checkpoint,
             get_events_at_timestamp
         ),
-        components(
-            schemas(
-                crate::models::CareerInfo,
-                crate::models::Team,
-                crate::models::CreateSimulationRequest,
-                crate::models::CreateSimulationResponse,
-                crate::models::SimulationPlayer,
-                crate::models::AdvanceSimulationRequest,
-                crate::models::SimulationControlRequest,
-                crate::models::EventFilterRequest,
-                crate::offers::OfferRequest,
-                crate::offers::Offer,
-                VCTCareerBackend::simulation_manager::LiveStats,
-                VCTCareerBackend::simulation_manager::PlayerPerformance,
-                VCTCareerBackend::simulation_manager::Scoreboard,
-                VCTCareerBackend::simulation_manager::MatchScore,
-                VCTCareerBackend::simulation_manager::RoundScore,
-                VCTCareerBackend::simulation_manager::PlayerRanking,
-                VCTCareerBackend::simulation_manager::EconomyStatus,
-                VCTCareerBackend::simulation_manager::SimulationCheckpoint,
-                VCTCareerBackend::sim::SimulationState,
-                VCTCareerBackend::sim::PlayerStats,
-                VCTCareerBackend::sim::GameEvent,
-                VCTCareerBackend::sim::Team,
-                VCTCareerBackend::sim::Agent,
-                VCTCareerBackend::sim::Weapon,
-                VCTCareerBackend::sim::SimulationMode,
-                VCTCareerBackend::sim::SimulationPhase,
-                VCTCareerBackend::sim::RoundEndReason,
-                VCTCareerBackend::sim::EventFilter
-            )
-        ),
+        components(schemas(
+            crate::models::CareerInfo,
+            crate::models::Team,
+            crate::models::CreateSimulationRequest,
+            crate::models::CreateSimulationResponse,
+            crate::models::SimulationPlayer,
+            crate::models::AdvanceSimulationRequest,
+            crate::models::SimulationControlRequest,
+            crate::models::EventFilterRequest,
+            crate::offers::OfferRequest,
+            crate::offers::Offer,
+            VCTCareerBackend::simulation_manager::LiveStats,
+            VCTCareerBackend::simulation_manager::PlayerPerformance,
+            VCTCareerBackend::simulation_manager::Scoreboard,
+            VCTCareerBackend::simulation_manager::MatchScore,
+            VCTCareerBackend::simulation_manager::RoundScore,
+            VCTCareerBackend::simulation_manager::PlayerRanking,
+            VCTCareerBackend::simulation_manager::EconomyStatus,
+            VCTCareerBackend::simulation_manager::SimulationCheckpoint,
+            VCTCareerBackend::sim::SimulationState,
+            VCTCareerBackend::sim::PlayerStats,
+            VCTCareerBackend::sim::GameEvent,
+            VCTCareerBackend::sim::Team,
+            VCTCareerBackend::sim::Agent,
+            VCTCareerBackend::sim::Weapon,
+            VCTCareerBackend::sim::SimulationMode,
+            VCTCareerBackend::sim::SimulationPhase,
+            VCTCareerBackend::sim::RoundEndReason,
+            VCTCareerBackend::sim::EventFilter
+        )),
         info(
             title = "VCTCareer Backend API",
             version = "1.0.0",

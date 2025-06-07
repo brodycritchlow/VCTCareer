@@ -1,4 +1,3 @@
-use actix_web::{post, web, App, HttpResponse, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -106,10 +105,16 @@ pub fn estimate_rr_change(input: &MatchInput, rank: RankTier) -> i32 {
             -15 + round_diff
         };
 
-        if input.is_win && matches!(
-            rank,
-            RankTier::Iron | RankTier::Bronze | RankTier::Silver | RankTier::Gold | RankTier::Platinum
-        ) {
+        if input.is_win
+            && matches!(
+                rank,
+                RankTier::Iron
+                    | RankTier::Bronze
+                    | RankTier::Silver
+                    | RankTier::Gold
+                    | RankTier::Platinum
+            )
+        {
             if input.acs_percentile > 0.95 {
                 rr += 5;
             } else if input.acs_percentile > 0.85 {
@@ -144,7 +149,9 @@ where
     impl<'de> Visitor<'de> for MapsVisitor {
         type Value = Vec<String>;
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a sequence, repeated query params, or a comma-separated string for maps")
+            formatter.write_str(
+                "a sequence, repeated query params, or a comma-separated string for maps",
+            )
         }
         fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
         where
@@ -161,9 +168,12 @@ where
             E: Error,
         {
             // Split on commas and trim whitespace
-            Ok(value.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+            Ok(value
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect())
         }
     }
     deserializer.deserialize_any(MapsVisitor)
 }
-

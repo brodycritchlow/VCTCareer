@@ -1,9 +1,9 @@
 use crate::models::CareerInfo;
 use crate::models::StartingTier;
-use actix_web::{web, HttpResponse, Responder};
+use actix_web::{HttpResponse, Responder, web};
 use dotenv::dotenv;
-use tokio_postgres::NoTls;
 use serde::Deserialize;
+use tokio_postgres::NoTls;
 
 pub fn weighted_tier(info: &CareerInfo) -> StartingTier {
     let mut score = 0.0;
@@ -40,7 +40,7 @@ pub fn weighted_tier(info: &CareerInfo) -> StartingTier {
             } else {
                 StartingTier::RankedPlay
             }
-        },
+        }
         _ => StartingTier::RankedPlay,
     }
 }
@@ -55,11 +55,17 @@ pub struct TeamQuery {
 
 pub async fn get_teams_handler(query: web::Query<TeamQuery>) -> impl Responder {
     dotenv().ok();
-    let (client, connection) = match tokio_postgres::connect(&std::env::var("DATABASE_URL").expect("DATABASE_URL must be set"), NoTls).await {
+    let (client, connection) = match tokio_postgres::connect(
+        &std::env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
+        NoTls,
+    )
+    .await
+    {
         Ok((client, connection)) => (client, connection),
         Err(e) => {
             eprintln!("Failed to connect to database: {}", e);
-            return HttpResponse::InternalServerError().body(format!("Failed to connect to database: {}", e));
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to connect to database: {}", e));
         }
     };
     actix_web::rt::spawn(async move {
@@ -102,23 +108,53 @@ pub async fn get_teams_handler(query: web::Query<TeamQuery>) -> impl Responder {
         Ok(rows) => rows,
         Err(_) => return HttpResponse::InternalServerError().body("Failed to fetch from database"),
     };
-    let teams: Vec<serde_json::Value> = rows.iter().map(|row| {
-        let mut obj = serde_json::Map::new();
-        for (i, col) in row.columns().iter().enumerate() {
-            let col_name = col.name();
-            let value: serde_json::Value = match col.type_().name() {
-                "int2" => row.try_get::<usize, i16>(i).map(serde_json::to_value).unwrap_or(Ok(serde_json::Value::Null)).unwrap_or(serde_json::Value::Null),
-                "int4" => row.try_get::<usize, i32>(i).map(serde_json::to_value).unwrap_or(Ok(serde_json::Value::Null)).unwrap_or(serde_json::Value::Null),
-                "int8" => row.try_get::<usize, i64>(i).map(serde_json::to_value).unwrap_or(Ok(serde_json::Value::Null)).unwrap_or(serde_json::Value::Null),
-                "float4" => row.try_get::<usize, f32>(i).map(serde_json::to_value).unwrap_or(Ok(serde_json::Value::Null)).unwrap_or(serde_json::Value::Null),
-                "float8" => row.try_get::<usize, f64>(i).map(serde_json::to_value).unwrap_or(Ok(serde_json::Value::Null)).unwrap_or(serde_json::Value::Null),
-                "bool" => row.try_get::<usize, bool>(i).map(serde_json::to_value).unwrap_or(Ok(serde_json::Value::Null)).unwrap_or(serde_json::Value::Null),
-                _ => row.try_get::<usize, String>(i).map(serde_json::to_value).unwrap_or(Ok(serde_json::Value::Null)).unwrap_or(serde_json::Value::Null),
-            };
-            obj.insert(col_name.to_string(), value);
-        }
-        serde_json::Value::Object(obj)
-    }).collect();
+    let teams: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|row| {
+            let mut obj = serde_json::Map::new();
+            for (i, col) in row.columns().iter().enumerate() {
+                let col_name = col.name();
+                let value: serde_json::Value = match col.type_().name() {
+                    "int2" => row
+                        .try_get::<usize, i16>(i)
+                        .map(serde_json::to_value)
+                        .unwrap_or(Ok(serde_json::Value::Null))
+                        .unwrap_or(serde_json::Value::Null),
+                    "int4" => row
+                        .try_get::<usize, i32>(i)
+                        .map(serde_json::to_value)
+                        .unwrap_or(Ok(serde_json::Value::Null))
+                        .unwrap_or(serde_json::Value::Null),
+                    "int8" => row
+                        .try_get::<usize, i64>(i)
+                        .map(serde_json::to_value)
+                        .unwrap_or(Ok(serde_json::Value::Null))
+                        .unwrap_or(serde_json::Value::Null),
+                    "float4" => row
+                        .try_get::<usize, f32>(i)
+                        .map(serde_json::to_value)
+                        .unwrap_or(Ok(serde_json::Value::Null))
+                        .unwrap_or(serde_json::Value::Null),
+                    "float8" => row
+                        .try_get::<usize, f64>(i)
+                        .map(serde_json::to_value)
+                        .unwrap_or(Ok(serde_json::Value::Null))
+                        .unwrap_or(serde_json::Value::Null),
+                    "bool" => row
+                        .try_get::<usize, bool>(i)
+                        .map(serde_json::to_value)
+                        .unwrap_or(Ok(serde_json::Value::Null))
+                        .unwrap_or(serde_json::Value::Null),
+                    _ => row
+                        .try_get::<usize, String>(i)
+                        .map(serde_json::to_value)
+                        .unwrap_or(Ok(serde_json::Value::Null))
+                        .unwrap_or(serde_json::Value::Null),
+                };
+                obj.insert(col_name.to_string(), value);
+            }
+            serde_json::Value::Object(obj)
+        })
+        .collect();
     HttpResponse::Ok().json(teams)
 }
-
