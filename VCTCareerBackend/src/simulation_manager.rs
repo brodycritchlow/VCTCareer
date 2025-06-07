@@ -700,9 +700,20 @@ pub fn restore_checkpoint(
     simulation_id_str: &str,
     checkpoint_id: &str
 ) -> Result<(), String> {
-    // In a real implementation, you'd restore the simulation state from the checkpoint
-    // This is a placeholder implementation
-    Err("Checkpoint restoration not yet implemented - requires persistent storage".to_string())
+    let simulation_id = Uuid::parse_str(simulation_id_str)
+        .map_err(|_| "Invalid simulation ID format".to_string())?;
+    
+    // Parse checkpoint ID as a tick number for now
+    let tick = checkpoint_id.parse::<u64>()
+        .map_err(|_| format!("Invalid checkpoint ID format: {}", checkpoint_id))?;
+    
+    let mut simulations = safe_lock(manager)?;
+    let sim = simulations.get_mut(&simulation_id)
+        .ok_or("Simulation not found")?;
+    
+    // Use the simulation's built-in checkpoint restoration
+    sim.restore_checkpoint(tick)
+        .map_err(|e| format!("Failed to restore checkpoint {}: {}", checkpoint_id, e))
 }
 
 pub fn rewind_to_round(
@@ -815,20 +826,7 @@ pub fn get_events_at_timestamp(
     
     let events: Vec<GameEvent> = sim.events.iter()
         .filter_map(|event| {
-            let event_timestamp = match event {
-                GameEvent::MatchStart { timestamp } => *timestamp,
-                GameEvent::RoundStart { timestamp, .. } => *timestamp,
-                GameEvent::RoundEnd { timestamp, .. } => *timestamp,
-                GameEvent::Kill { timestamp, .. } => *timestamp,
-                GameEvent::Damage { timestamp, .. } => *timestamp,
-                GameEvent::SpikePlant { timestamp, .. } => *timestamp,
-                GameEvent::SpikeDefuse { timestamp, .. } => *timestamp,
-                GameEvent::AbilityUsed { timestamp, .. } => *timestamp,
-                GameEvent::BuyPhaseStart { timestamp, .. } => *timestamp,
-                GameEvent::BuyPhaseEnd { timestamp, .. } => *timestamp,
-                GameEvent::SideSwap { timestamp, .. } => *timestamp,
-                GameEvent::MatchEnd { timestamp, .. } => *timestamp,
-            };
+            let event_timestamp = event.timestamp();
             
             if event_timestamp >= start_time && event_timestamp <= end_time {
                 Some(event.clone())

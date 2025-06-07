@@ -287,6 +287,25 @@ pub enum RoundEndReason {
     TimeExpired,
 }
 
+impl GameEvent {
+    pub fn timestamp(&self) -> Timestamp {
+        match self {
+            GameEvent::MatchStart { timestamp } => *timestamp,
+            GameEvent::MatchEnd { timestamp, .. } => *timestamp,
+            GameEvent::BuyPhaseStart { timestamp, .. } => *timestamp,
+            GameEvent::BuyPhaseEnd { timestamp, .. } => *timestamp,
+            GameEvent::RoundStart { timestamp, .. } => *timestamp,
+            GameEvent::RoundEnd { timestamp, .. } => *timestamp,
+            GameEvent::Kill { timestamp, .. } => *timestamp,
+            GameEvent::Damage { timestamp, .. } => *timestamp,
+            GameEvent::SpikePlant { timestamp, .. } => *timestamp,
+            GameEvent::SpikeDefuse { timestamp, .. } => *timestamp,
+            GameEvent::AbilityUsed { timestamp, .. } => *timestamp,
+            GameEvent::SideSwap { timestamp, .. } => *timestamp,
+        }
+    }
+}
+
 pub struct ValorantSimulation {
     pub state: SimulationState,
     pub players: HashMap<u32, Player>,
@@ -488,7 +507,7 @@ impl ValorantSimulation {
             self.loss_streaks = checkpoint.loss_streaks;
             Ok(())
         } else {
-            Err("Checkpoint not found".to_string())
+            Err(format!("Checkpoint not found for tick {}", tick))
         }
     }
 
@@ -676,8 +695,8 @@ impl ValorantSimulation {
         // Calculate elapsed time since buy phase started
         let elapsed_time = self.state.current_timestamp - self.round_start_timestamp;
 
-        // Simulate buying logic over multiple ticks (every 5 seconds)
-        if elapsed_time > 0 && elapsed_time % 5000 == 0 {
+        // Simulate buying logic at the start of buy phase (after 1 second to allow setup)
+        if elapsed_time >= 1000 && elapsed_time <= 1500 {
             self.simulate_player_purchases();
         }
 
@@ -793,15 +812,14 @@ impl ValorantSimulation {
     }
 
     fn advance_round_end(&mut self, round_number: u8, _winner: Team) -> Result<(), String> {
-        // Track when round ended if not already set
-        if !matches!(self.events.last(), Some(GameEvent::RoundEnd { .. })) {
-            return Ok(()); // Should not happen, but protect against it
-        }
-        
         // Calculate elapsed time since the round ended
-        let round_end_timestamp = match self.events.last() {
+        let round_end_timestamp = match self.events.iter().rev().find(|e| matches!(e, GameEvent::RoundEnd { .. })) {
             Some(GameEvent::RoundEnd { timestamp, .. }) => *timestamp,
-            _ => self.state.current_timestamp
+            _ => {
+                // Fallback: use current timestamp if no RoundEnd event found
+                log::warn!("No RoundEnd event found for round {}, using current timestamp", round_number);
+                self.state.current_timestamp
+            }
         };
         
         let elapsed_since_round_end = self.state.current_timestamp - round_end_timestamp;
@@ -898,7 +916,24 @@ impl ValorantSimulation {
             .collect()
     }
 
+    fn calculate_loadout_cost(&self, weapon: &Weapon, armor: &ArmorType) -> u32 {
+        let weapon_cost = self.weapon_stats[weapon].price;
+        let armor_cost = match armor {
+            ArmorType::Heavy => 1000,
+            ArmorType::Light => 400,
+            ArmorType::None => 0,
+        };
+        weapon_cost + armor_cost
+    }
+
     fn simulate_player_purchases(&mut self) {
+        // Pre-calculate all costs to avoid borrowing conflicts
+        let operator_heavy_cost = self.calculate_loadout_cost(&Weapon::Operator, &ArmorType::Heavy);
+        let vandal_heavy_cost = self.calculate_loadout_cost(&Weapon::Vandal, &ArmorType::Heavy);
+        let spectre_cost = self.calculate_loadout_cost(&Weapon::Spectre, &ArmorType::None);
+        let spectre_light_cost = self.calculate_loadout_cost(&Weapon::Spectre, &ArmorType::Light);
+        let sheriff_cost = self.calculate_loadout_cost(&Weapon::Sheriff, &ArmorType::None);
+        
         for player in self.players.values_mut() {
             // Reset loadout if they died (don't carry over equipment)
             if !player.survived_round() {
@@ -910,30 +945,35 @@ impl ValorantSimulation {
                 };
             }
             
-            // Basic buying strategy
-            if player.current_credits >= 5700 { // Operator + Heavy armor
+            // Dynamic buying strategy with pre-calculated costs
+            if player.current_credits >= operator_heavy_cost {
                 player.current_loadout.primary_weapon = Some(Weapon::Operator);
                 player.current_loadout.armor = ArmorType::Heavy;
-                player.current_credits -= 5700;
-            } else if player.current_credits >= 3900 { // Vandal + Heavy armor
+                player.current_credits -= operator_heavy_cost;
+            } else if player.current_credits >= vandal_heavy_cost {
                 player.current_loadout.primary_weapon = Some(Weapon::Vandal);
                 player.current_loadout.armor = ArmorType::Heavy;
-                player.current_credits -= 3900;
-            } else if player.current_credits >= 1600 { // SMG buy
+                player.current_credits -= vandal_heavy_cost;
+            } else if player.current_credits >= spectre_light_cost {
                 player.current_loadout.primary_weapon = Some(Weapon::Spectre);
-                player.current_credits -= 1600;
-                if player.current_credits >= 400 {
-                    player.current_loadout.armor = ArmorType::Light;
-                    player.current_credits -= 400;
-                }
-            } else if player.current_credits >= 800 { // Pistol upgrade
+                player.current_loadout.armor = ArmorType::Light;
+                player.current_credits -= spectre_light_cost;
+            } else if player.current_credits >= spectre_cost {
+                player.current_loadout.primary_weapon = Some(Weapon::Spectre);
+                player.current_credits -= spectre_cost;
+            } else if player.current_credits >= sheriff_cost {
                 player.current_loadout.secondary_weapon = Weapon::Sheriff;
-                player.current_credits -= 800;
+                player.current_credits -= sheriff_cost;
             }
         }
     }
 
     fn simulate_combat(&mut self, alive_attackers: &[u32], alive_defenders: &[u32]) {
+        // Safety check: ensure both teams have alive players
+        if alive_attackers.is_empty() || alive_defenders.is_empty() {
+            return;
+        }
+        
         let mut rng = rand::thread_rng();
         
         let attacker_id = alive_attackers[rng.random_range(0..alive_attackers.len())];
