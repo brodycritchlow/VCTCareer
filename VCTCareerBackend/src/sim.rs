@@ -145,6 +145,22 @@ impl Player {
 
 pub type Timestamp = u64;
 
+// Helper functions for UUID serialization in schemas
+fn serialize_uuid<S>(uuid: &Uuid, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(&uuid.to_string())
+}
+
+fn deserialize_uuid<'de, D>(deserializer: D) -> Result<Uuid, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    Uuid::parse_str(&s).map_err(serde::de::Error::custom)
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub enum SimulationMode {
     Paused,
@@ -161,8 +177,10 @@ pub enum SimulationPhase {
     MatchEnd { winner: Team, final_score: (u8, u8) },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SimulationState {
+    #[serde(serialize_with = "serialize_uuid", deserialize_with = "deserialize_uuid")]
+    #[schema(value_type = String)]
     pub id: Uuid,
     pub mode: SimulationMode,
     pub phase: SimulationPhase,

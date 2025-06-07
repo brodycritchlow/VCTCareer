@@ -122,7 +122,7 @@ fn main() {
     println!("✓ Simulation created with ID: {}", simulation_id);
     
     // Get initial simulation state
-    let initial_state = get_simulation_state(&manager, simulation_id.clone()).expect("Failed to get initial state");
+    let initial_state = get_simulation_state(&manager, &simulation_id).expect("Failed to get initial state");
     println!("✓ Initial simulation state retrieved");
     println!("  - Round: {}", initial_state.current_round);
     println!("  - Phase: {:?}", initial_state.phase);
@@ -144,7 +144,7 @@ fn main() {
     advance_simulation_legacy(&manager, simulation_id.clone(), Some(50), Some("tick".to_string())).expect("Failed to advance multiple ticks");
     println!("✓ Advanced by 50 ticks");
     
-    let mid_state = get_simulation_state(&manager, simulation_id.clone()).expect("Failed to get mid state");
+    let mid_state = get_simulation_state(&manager, &simulation_id).expect("Failed to get mid state");
     println!("  - Current Round: {}", mid_state.current_round);
     println!("  - Current Score: {} - {}", mid_state.attacker_score, mid_state.defender_score);
     println!("  - Current Phase: {:?}", mid_state.phase);
@@ -232,7 +232,7 @@ fn main() {
     
     // Get current simulation state
     println!("\n=== Current Simulation State ===");
-    let final_state = get_simulation_state(&manager, simulation_id.clone()).expect("Failed to get final state");
+    let final_state = get_simulation_state(&manager, &simulation_id).expect("Failed to get final state");
     println!("✓ Simulation state retrieved!");
     println!("  - Current Score: {} - {}", final_state.attacker_score, final_state.defender_score);
     println!("  - Current Round: {}", final_state.current_round);

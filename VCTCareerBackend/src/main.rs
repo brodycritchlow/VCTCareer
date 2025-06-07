@@ -565,7 +565,12 @@ async fn main() -> std::io::Result<()> {
             advance_simulation,
             control_simulation,
             get_simulation_events,
-            get_simulation_stats
+            get_simulation_stats,
+            get_live_stats,
+            get_scoreboard,
+            get_economy_status,
+            create_checkpoint,
+            get_events_at_timestamp
         ),
         components(
             schemas(
@@ -579,6 +584,24 @@ async fn main() -> std::io::Result<()> {
                 crate::models::EventFilterRequest,
                 crate::offers::OfferRequest,
                 crate::offers::Offer,
+                VCTCareerBackend::simulation_manager::LiveStats,
+                VCTCareerBackend::simulation_manager::PlayerPerformance,
+                VCTCareerBackend::simulation_manager::Scoreboard,
+                VCTCareerBackend::simulation_manager::MatchScore,
+                VCTCareerBackend::simulation_manager::RoundScore,
+                VCTCareerBackend::simulation_manager::PlayerRanking,
+                VCTCareerBackend::simulation_manager::EconomyStatus,
+                VCTCareerBackend::simulation_manager::SimulationCheckpoint,
+                VCTCareerBackend::sim::SimulationState,
+                VCTCareerBackend::sim::PlayerStats,
+                VCTCareerBackend::sim::GameEvent,
+                VCTCareerBackend::sim::Team,
+                VCTCareerBackend::sim::Agent,
+                VCTCareerBackend::sim::Weapon,
+                VCTCareerBackend::sim::SimulationMode,
+                VCTCareerBackend::sim::SimulationPhase,
+                VCTCareerBackend::sim::RoundEndReason,
+                VCTCareerBackend::sim::EventFilter
             )
         ),
         info(

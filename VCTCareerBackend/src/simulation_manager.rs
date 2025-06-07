@@ -442,7 +442,7 @@ pub struct PlayerRanking {
     pub damage_dealt: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct EconomyStatus {
     pub attacker_average_credits: u32,
     pub defender_average_credits: u32,
@@ -666,7 +666,7 @@ pub fn get_economy_status_legacy(
 }
 
 // Phase 3 implementation functions
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SimulationCheckpoint {
     pub checkpoint_id: String,
     pub timestamp: u64,
