@@ -393,7 +393,7 @@ fn test_get_events_by_player() {
     let result = get_events_by_player_legacy(&manager, simulation_id, 1);
     assert!(result.is_ok());
 
-    let events = result.unwrap();
+    let _events = result.unwrap();
     // Events should be filtered by player 1
     // The exact verification depends on the GameEvent structure
     // For now, just verify we can call the function without errors

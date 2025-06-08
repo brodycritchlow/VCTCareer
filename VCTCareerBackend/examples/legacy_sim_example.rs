@@ -1,4 +1,4 @@
-use vctcareer_backend::sim::{Agent, Player, Team, ValorantSimulation};
+use vctcareer_backend::sim::{Agent, Player, PlayerSkills, Team, ValorantSimulation};
 
 fn colorize_player_id(id: u32) -> String {
     if id <= 5 {
@@ -17,50 +17,60 @@ fn main() {
         "Jett A".to_string(),
         Agent::Jett,
         Team::Attackers,
-        0.8,
-        0.7,
-        0.6,
-        0.75,
+        PlayerSkills {
+            aim: 0.8,
+            hs: 0.7,
+            movement: 0.7,
+            util: 0.75,
+        },
     ));
     sim.add_player(Player::new(
         2,
         "Phoenix A".to_string(),
         Agent::Phoenix,
         Team::Attackers,
-        0.65,
-        0.5,
-        0.7,
-        0.8,
+        PlayerSkills {
+            aim: 0.65,
+            hs: 0.5,
+            movement: 0.7,
+            util: 0.8,
+        },
     ));
     sim.add_player(Player::new(
         3,
         "Sova A".to_string(),
         Agent::Sova,
         Team::Attackers,
-        0.7,
-        0.6,
-        0.65,
-        0.9,
+        PlayerSkills {
+            aim: 0.7,
+            hs: 0.6,
+            movement: 0.65,
+            util: 0.9,
+        },
     ));
     sim.add_player(Player::new(
         4,
         "Sage A".to_string(),
         Agent::Sage,
         Team::Attackers,
-        0.5,
-        0.4,
-        0.5,
-        0.85,
+        PlayerSkills {
+            aim: 0.5,
+            hs: 0.4,
+            movement: 0.5,
+            util: 0.85,
+        },
     ));
     sim.add_player(Player::new(
         5,
         "Viper A".to_string(),
         Agent::Viper,
         Team::Attackers,
-        0.75,
-        0.65,
-        0.55,
-        0.8,
+        PlayerSkills {
+            aim: 0.75,
+            hs: 0.65,
+            movement: 0.55,
+            util: 0.8,
+        },
     ));
 
     // Defenders with varied skills
@@ -69,50 +79,60 @@ fn main() {
         "Omen D".to_string(),
         Agent::Omen,
         Team::Defenders,
-        0.7,
-        0.6,
-        0.75,
-        0.8,
+        PlayerSkills {
+            aim: 0.7,
+            hs: 0.6,
+            movement: 0.75,
+            util: 0.8,
+        },
     ));
     sim.add_player(Player::new(
         7,
         "Killjoy D".to_string(),
         Agent::Killjoy,
         Team::Defenders,
-        0.6,
-        0.55,
-        0.6,
-        0.9,
+        PlayerSkills {
+            aim: 0.6,
+            hs: 0.55,
+            movement: 0.6,
+            util: 0.9,
+        },
     ));
     sim.add_player(Player::new(
         8,
         "Cypher D".to_string(),
         Agent::Cypher,
         Team::Defenders,
-        0.65,
-        0.5,
-        0.7,
-        0.85,
+        PlayerSkills {
+            aim: 0.65,
+            hs: 0.5,
+            movement: 0.7,
+            util: 0.85,
+        },
     ));
     sim.add_player(Player::new(
         9,
         "Raze D".to_string(),
         Agent::Raze,
         Team::Defenders,
-        0.85,
-        0.75,
-        0.65,
-        0.7,
+        PlayerSkills {
+            aim: 0.85,
+            hs: 0.75,
+            movement: 0.65,
+            util: 0.7,
+        },
     ));
     sim.add_player(Player::new(
         10,
         "Breach D".to_string(),
         Agent::Breach,
         Team::Defenders,
-        0.7,
-        0.6,
-        0.7,
-        0.75,
+        PlayerSkills {
+            aim: 0.7,
+            hs: 0.6,
+            movement: 0.7,
+            util: 0.75,
+        },
     ));
 
     let _ = sim.run_simulation_to_completion();
