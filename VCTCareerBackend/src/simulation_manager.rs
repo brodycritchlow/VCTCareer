@@ -80,10 +80,12 @@ pub fn create_simulation(
             player_data.name,
             agent,
             team,
-            player_data.aim_skill,
-            player_data.hs_skill,
-            player_data.movement_skill,
-            player_data.util_skill,
+            crate::sim::PlayerSkills { 
+                aim: player_data.aim_skill,
+                hs: player_data.hs_skill, 
+                movement: player_data.movement_skill, 
+                util: player_data.util_skill, 
+            }
         );
 
         sim.add_player(player);

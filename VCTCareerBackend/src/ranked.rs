@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -42,19 +44,21 @@ pub enum RankTier {
     Radiant,
 }
 
-impl RankTier {
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for RankTier {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<RankTier, ()> {
         match s.to_lowercase().as_str() {
-            "iron" => Some(RankTier::Iron),
-            "bronze" => Some(RankTier::Bronze),
-            "silver" => Some(RankTier::Silver),
-            "gold" => Some(RankTier::Gold),
-            "platinum" => Some(RankTier::Platinum),
-            "diamond" => Some(RankTier::Diamond),
-            "ascendant" => Some(RankTier::Ascendant),
-            "immortal" => Some(RankTier::Immortal),
-            "radiant" => Some(RankTier::Radiant),
-            _ => None,
+            "iron" => Ok(RankTier::Iron),
+            "bronze" => Ok(RankTier::Bronze),
+            "silver" => Ok(RankTier::Silver),
+            "gold" => Ok(RankTier::Gold),
+            "platinum" => Ok(RankTier::Platinum),
+            "diamond" => Ok(RankTier::Diamond),
+            "ascendant" => Ok(RankTier::Ascendant),
+            "immortal" => Ok(RankTier::Immortal),
+            "radiant" => Ok(RankTier::Radiant),
+            _ => Err(()),
         }
     }
 }

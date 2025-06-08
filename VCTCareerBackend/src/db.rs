@@ -76,26 +76,27 @@ pub async fn get_teams_handler(query: web::Query<TeamQuery>) -> impl Responder {
     let mut query_str = String::from("SELECT * FROM teams");
     let mut conditions = Vec::new();
     let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::new();
-    let mut ranking_val: Option<i32> = None;
-    let mut tier_val: Option<i16> = None;
+    let mut owned_i32_params: Vec<i32> = Vec::new();
+    let mut owned_i16_params: Vec<i16> = Vec::new();
     if let Some(ref name) = query.team_name {
         conditions.push(format!("team_name = ${}", params.len() + 1));
         params.push(name);
     }
     if let Some(ranking) = query.ranking {
-        ranking_val = Some(ranking);
+        owned_i32_params.push(ranking);
         conditions.push(format!("ranking = ${}", params.len() + 1));
-        params.push(ranking_val.as_ref().unwrap());
+        params.push(&owned_i32_params[owned_i32_params.len() - 1]);
     }
     if let Some(ref tier) = query.tier {
-        tier_val = Some(match tier.as_str() {
+        let tier_val: i16 = match tier.as_str() {
             "Tier 1" => 1,
             "Tier 2" => 2,
             "Tier 3" => 3,
             _ => tier.parse().unwrap_or(0),
-        });
+        };
+        owned_i16_params.push(tier_val);
         conditions.push(format!("tier = ${}", params.len() + 1));
-        params.push(tier_val.as_ref().unwrap());
+        params.push(&owned_i16_params[owned_i16_params.len() - 1]);
     }
     if let Some(ref region) = query.region {
         conditions.push(format!("region = ${}", params.len() + 1));

@@ -1,6 +1,6 @@
-use VCTCareerBackend::models::{EventFilterRequest, SimulationPlayer};
-use VCTCareerBackend::sim::GameEvent;
-use VCTCareerBackend::simulation_manager::{
+use vctcareer_backend::models::{EventFilterRequest, SimulationPlayer};
+use vctcareer_backend::sim::GameEvent;
+use vctcareer_backend::simulation_manager::{
     advance_simulation_legacy, control_simulation_legacy, create_simulation,
     create_simulation_manager, get_events_by_player_legacy, get_events_by_round_legacy,
     get_events_by_type_legacy, get_events_since_legacy, get_simulation_events_legacy,

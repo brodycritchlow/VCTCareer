@@ -1,4 +1,4 @@
-use VCTCareerBackend::sim::{Agent, Player, Team, ValorantSimulation};
+use vctcareer_backend::sim::{Agent, Player, Team, ValorantSimulation};
 
 fn colorize_player_id(id: u32) -> String {
     if id <= 5 {
@@ -119,10 +119,10 @@ fn main() {
 
     for event in sim.events {
         match event {
-            VCTCareerBackend::sim::GameEvent::MatchStart { timestamp } => {
+            vctcareer_backend::sim::GameEvent::MatchStart { timestamp } => {
                 println!("[{}] Match Start", timestamp);
             }
-            VCTCareerBackend::sim::GameEvent::MatchEnd {
+            vctcareer_backend::sim::GameEvent::MatchEnd {
                 timestamp,
                 winning_team,
                 score_attackers,
@@ -133,19 +133,19 @@ fn main() {
                     timestamp, winning_team, score_attackers, score_defenders
                 );
             }
-            VCTCareerBackend::sim::GameEvent::BuyPhaseStart {
+            vctcareer_backend::sim::GameEvent::BuyPhaseStart {
                 timestamp,
                 round_number,
             } => {
                 println!("[{}] Round {} Buy Phase Start", timestamp, round_number);
             }
-            VCTCareerBackend::sim::GameEvent::BuyPhaseEnd {
+            vctcareer_backend::sim::GameEvent::BuyPhaseEnd {
                 timestamp,
                 round_number,
             } => {
                 println!("[{}] Round {} Buy Phase End", timestamp, round_number);
             }
-            VCTCareerBackend::sim::GameEvent::RoundStart {
+            vctcareer_backend::sim::GameEvent::RoundStart {
                 timestamp,
                 round_number,
                 attacker_credits_start,
@@ -156,7 +156,7 @@ fn main() {
                     timestamp, round_number, attacker_credits_start, defender_credits_start
                 );
             }
-            VCTCareerBackend::sim::GameEvent::RoundEnd {
+            vctcareer_backend::sim::GameEvent::RoundEnd {
                 timestamp,
                 round_number,
                 winning_team,
@@ -167,7 +167,7 @@ fn main() {
                     timestamp, round_number, winning_team, reason
                 );
             }
-            VCTCareerBackend::sim::GameEvent::Kill {
+            vctcareer_backend::sim::GameEvent::Kill {
                 timestamp,
                 killer_id,
                 victim_id,
@@ -183,7 +183,7 @@ fn main() {
                     if is_headshot { " (HS)" } else { "" }
                 );
             }
-            VCTCareerBackend::sim::GameEvent::Damage {
+            vctcareer_backend::sim::GameEvent::Damage {
                 timestamp,
                 attacker_id,
                 victim_id,
@@ -201,7 +201,7 @@ fn main() {
                     if is_headshot { " (HS)" } else { "" }
                 );
             }
-            VCTCareerBackend::sim::GameEvent::SpikePlant {
+            vctcareer_backend::sim::GameEvent::SpikePlant {
                 timestamp,
                 planter_id,
             } => {
@@ -211,7 +211,7 @@ fn main() {
                     colorize_player_id(planter_id)
                 );
             }
-            VCTCareerBackend::sim::GameEvent::SpikeDefuse {
+            vctcareer_backend::sim::GameEvent::SpikeDefuse {
                 timestamp,
                 defuser_id,
                 successful,
@@ -223,7 +223,7 @@ fn main() {
                     successful
                 );
             }
-            VCTCareerBackend::sim::GameEvent::AbilityUsed {
+            vctcareer_backend::sim::GameEvent::AbilityUsed {
                 timestamp,
                 player_id,
                 ability_name,
@@ -235,7 +235,7 @@ fn main() {
                     ability_name
                 );
             }
-            VCTCareerBackend::sim::GameEvent::SideSwap {
+            vctcareer_backend::sim::GameEvent::SideSwap {
                 timestamp,
                 round_number,
             } => {

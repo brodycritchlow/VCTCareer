@@ -9,11 +9,11 @@ use crate::models::{
     EventFilterRequest, SimulationControlRequest,
 };
 use crate::offers::OfferRequest;
-use VCTCareerBackend::ranked::{
+use vctcareer_backend::ranked::{
     MapPoolRequest, MatchInput, RandomMapResponse, RankTier, RrEstimateResponse, estimate_rr_change,
 };
-use VCTCareerBackend::sim::{Agent, Player, Team, ValorantSimulation};
-use VCTCareerBackend::simulation_manager;
+use vctcareer_backend::sim::{Agent, Player, Team, ValorantSimulation};
+use vctcareer_backend::simulation_manager;
 use actix_cors::Cors;
 use actix_web::post;
 use actix_web::{App, HttpResponse, HttpServer, Responder, get, web};
@@ -176,11 +176,11 @@ async fn generate_offers(pool: web::Data<Pool>, query: web::Query<OfferRequest>)
 #[get("/estimate_rr")]
 async fn estimate_rr(input: web::Query<MatchInput>) -> impl Responder {
     match RankTier::from_str(input.rank.trim()) {
-        Some(rank) => {
+        Ok(rank) => {
             let rr_change = estimate_rr_change(&input, rank);
             HttpResponse::Ok().json(RrEstimateResponse { rr_change })
         }
-        None => HttpResponse::BadRequest().body("Invalid rank provided"),
+        Err(_) => HttpResponse::BadRequest().body("Invalid rank provided"),
     }
 }
 
@@ -245,10 +245,12 @@ async fn create_simulation(
             player_data.name.clone(),
             agent,
             team,
-            player_data.aim_skill,
-            player_data.hs_skill,
-            player_data.movement_skill,
-            player_data.util_skill,
+            vctcareer_backend::sim::PlayerSkills {
+                aim: player_data.aim_skill,
+                hs: player_data.hs_skill,
+                movement: player_data.movement_skill,
+                util: player_data.util_skill,
+            },
         );
 
         sim.add_player(player);
@@ -381,7 +383,7 @@ async fn control_simulation(
         ("end_timestamp" = Option<u64>, Query, description = "Filter by end timestamp"),
     ),
     responses(
-        (status = 200, description = "Simulation events", body = Vec<VCTCareerBackend::sim::GameEvent>),
+        (status = 200, description = "Simulation events", body = Vec<vctcareer_backend::sim::GameEvent>),
         (status = 404, description = "Simulation not found", body = String),
     )
 )]
@@ -394,7 +396,7 @@ async fn get_simulation_events(
     let simulation_id = path.into_inner();
     let filter = query.into_inner();
     // Convert local EventFilterRequest to the one expected by simulation_manager
-    let sim_filter = VCTCareerBackend::models::EventFilterRequest {
+    let sim_filter = vctcareer_backend::models::EventFilterRequest {
         event_types: filter.event_types,
         player_ids: filter.player_ids,
         round_numbers: filter.round_numbers,
@@ -415,7 +417,7 @@ async fn get_simulation_events(
         ("id" = String, Path, description = "Simulation ID")
     ),
     responses(
-        (status = 200, description = "Player statistics", body = Vec<VCTCareerBackend::sim::PlayerStats>),
+        (status = 200, description = "Player statistics", body = Vec<vctcareer_backend::sim::PlayerStats>),
         (status = 404, description = "Simulation not found", body = String),
     )
 )]
@@ -436,7 +438,7 @@ async fn get_simulation_stats(
     get,
     path = "/simulation/{id}/live-stats",
     responses(
-        (status = 200, description = "Live match statistics", body = VCTCareerBackend::simulation_manager::LiveStats),
+        (status = 200, description = "Live match statistics", body = vctcareer_backend::simulation_manager::LiveStats),
         (status = 404, description = "Simulation not found", body = String),
     )
 )]
@@ -456,7 +458,7 @@ async fn get_live_stats(
     get,
     path = "/simulation/{id}/scoreboard",
     responses(
-        (status = 200, description = "Match scoreboard", body = VCTCareerBackend::simulation_manager::Scoreboard),
+        (status = 200, description = "Match scoreboard", body = vctcareer_backend::simulation_manager::Scoreboard),
         (status = 404, description = "Simulation not found", body = String),
     )
 )]
@@ -476,7 +478,7 @@ async fn get_scoreboard(
     get,
     path = "/simulation/{id}/economy",
     responses(
-        (status = 200, description = "Economy status", body = VCTCareerBackend::simulation_manager::EconomyStatus),
+        (status = 200, description = "Economy status", body = vctcareer_backend::simulation_manager::EconomyStatus),
         (status = 404, description = "Simulation not found", body = String),
     )
 )]
@@ -519,7 +521,7 @@ async fn create_checkpoint(
     get,
     path = "/simulation/{id}/events/at/{timestamp}",
     responses(
-        (status = 200, description = "Events at timestamp", body = Vec<VCTCareerBackend::sim::GameEvent>),
+        (status = 200, description = "Events at timestamp", body = Vec<vctcareer_backend::sim::GameEvent>),
         (status = 404, description = "Simulation not found", body = String),
     )
 )]
@@ -581,24 +583,24 @@ async fn main() -> std::io::Result<()> {
             crate::models::EventFilterRequest,
             crate::offers::OfferRequest,
             crate::offers::Offer,
-            VCTCareerBackend::simulation_manager::LiveStats,
-            VCTCareerBackend::simulation_manager::PlayerPerformance,
-            VCTCareerBackend::simulation_manager::Scoreboard,
-            VCTCareerBackend::simulation_manager::MatchScore,
-            VCTCareerBackend::simulation_manager::RoundScore,
-            VCTCareerBackend::simulation_manager::PlayerRanking,
-            VCTCareerBackend::simulation_manager::EconomyStatus,
-            VCTCareerBackend::simulation_manager::SimulationCheckpoint,
-            VCTCareerBackend::sim::SimulationState,
-            VCTCareerBackend::sim::PlayerStats,
-            VCTCareerBackend::sim::GameEvent,
-            VCTCareerBackend::sim::Team,
-            VCTCareerBackend::sim::Agent,
-            VCTCareerBackend::sim::Weapon,
-            VCTCareerBackend::sim::SimulationMode,
-            VCTCareerBackend::sim::SimulationPhase,
-            VCTCareerBackend::sim::RoundEndReason,
-            VCTCareerBackend::sim::EventFilter
+            vctcareer_backend::simulation_manager::LiveStats,
+            vctcareer_backend::simulation_manager::PlayerPerformance,
+            vctcareer_backend::simulation_manager::Scoreboard,
+            vctcareer_backend::simulation_manager::MatchScore,
+            vctcareer_backend::simulation_manager::RoundScore,
+            vctcareer_backend::simulation_manager::PlayerRanking,
+            vctcareer_backend::simulation_manager::EconomyStatus,
+            vctcareer_backend::simulation_manager::SimulationCheckpoint,
+            vctcareer_backend::sim::SimulationState,
+            vctcareer_backend::sim::PlayerStats,
+            vctcareer_backend::sim::GameEvent,
+            vctcareer_backend::sim::Team,
+            vctcareer_backend::sim::Agent,
+            vctcareer_backend::sim::Weapon,
+            vctcareer_backend::sim::SimulationMode,
+            vctcareer_backend::sim::SimulationPhase,
+            vctcareer_backend::sim::RoundEndReason,
+            vctcareer_backend::sim::EventFilter
         )),
         info(
             title = "VCTCareer Backend API",

@@ -1,6 +1,6 @@
-use VCTCareerBackend::models::{EventFilterRequest, SimulationPlayer};
-use VCTCareerBackend::sim::GameEvent;
-use VCTCareerBackend::simulation_manager::{
+use vctcareer_backend::models::{EventFilterRequest, SimulationPlayer};
+use vctcareer_backend::sim::GameEvent;
+use vctcareer_backend::simulation_manager::{
     AdvanceMode, SimulationCommand, advance_simulation, control_simulation, create_checkpoint,
     create_simulation, create_simulation_manager, get_economy_status, get_events_at_timestamp,
     get_events_by_player, get_events_by_round, get_events_by_type, get_events_since,
@@ -220,10 +220,10 @@ fn main() {
         "  - Loss Streaks: Attackers: {:?}, Defenders: {:?}",
         economy
             .loss_streaks
-            .get(&VCTCareerBackend::sim::Team::Attackers),
+            .get(&vctcareer_backend::sim::Team::Attackers),
         economy
             .loss_streaks
-            .get(&VCTCareerBackend::sim::Team::Defenders)
+            .get(&vctcareer_backend::sim::Team::Defenders)
     );
 
     // Advance more to generate events for filtering

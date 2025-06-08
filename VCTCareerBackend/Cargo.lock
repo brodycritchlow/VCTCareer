@@ -3,27 +3,6 @@
 version = 4
 
 [[package]]
-name = "VCTCareerBackend"
-version = "0.1.0"
-dependencies = [
- "actix-cors",
- "actix-web",
- "crossterm",
- "deadpool-postgres",
- "dotenv",
- "log",
- "rand",
- "ratatui",
- "serde",
- "serde_json",
- "tokio-postgres",
- "utoipa",
- "utoipa-actix-web",
- "utoipa-swagger-ui",
- "uuid",
-]
-
-[[package]]
 name = "actix-codec"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2042,6 +2021,27 @@ dependencies = [
  "js-sys",
  "serde",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "vctcareer_backend"
+version = "0.1.0"
+dependencies = [
+ "actix-cors",
+ "actix-web",
+ "crossterm",
+ "deadpool-postgres",
+ "dotenv",
+ "log",
+ "rand",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "tokio-postgres",
+ "utoipa",
+ "utoipa-actix-web",
+ "utoipa-swagger-ui",
+ "uuid",
 ]
 
 [[package]]

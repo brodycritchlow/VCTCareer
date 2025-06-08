@@ -101,6 +101,14 @@ pub struct PlayerLoadout {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlayerSkills {
+    pub aim: f32,
+    pub hs: f32,
+    pub movement: f32,
+    pub util: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Player {
     pub id: u32,
     pub name: String,
@@ -113,10 +121,7 @@ pub struct Player {
     pub ultimate_points: u32,
     pub current_loadout: PlayerLoadout,
 
-    pub aim_skill: f32,
-    pub hs_skill: f32,
-    pub movement_skill: f32,
-    pub util_skill: f32,
+    skills: PlayerSkills,
 }
 
 impl Player {
@@ -125,10 +130,7 @@ impl Player {
         name: String,
         agent: Agent,
         team: Team,
-        aim: f32,
-        hs: f32,
-        movement: f32,
-        util: f32,
+        skills: PlayerSkills,
     ) -> Self {
         Player {
             id,
@@ -146,10 +148,7 @@ impl Player {
                 armor: ArmorType::None,
                 abilities_purchased: Vec::new(),
             },
-            aim_skill: aim.clamp(0.0, 1.0),
-            hs_skill: hs.clamp(0.0, 1.0),
-            movement_skill: movement.clamp(0.0, 1.0),
-            util_skill: util.clamp(0.0, 1.0),
+            skills,
         }
     }
 
@@ -391,6 +390,7 @@ pub struct SimulationCheckpoint {
     pub loss_streaks: HashMap<Team, u8>,
 }
 
+#[allow(clippy::new_without_default)]
 impl ValorantSimulation {
     pub fn new() -> Self {
         let mut weapon_stats = HashMap::new();
@@ -670,8 +670,8 @@ impl ValorantSimulation {
 
     pub fn get_player_stats(&self) -> Vec<PlayerStats> {
         self.players
-            .iter()
-            .map(|(_, player)| {
+            .values()
+            .map(|player| {
                 let kills = self.events.iter().filter(|e| {
                 matches!(e, GameEvent::Kill { killer_id, .. } if *killer_id == player.id)
             }).count() as u32;
@@ -1173,9 +1173,9 @@ impl ValorantSimulation {
 
         // Enhanced combat calculation with weapon stats
         let attacker_base_skill =
-            attacker_player_data.aim_skill * 0.7 + attacker_player_data.hs_skill * 0.3;
+            attacker_player_data.skills.aim * 0.7 + attacker_player_data.skills.hs * 0.3;
         let defender_base_skill =
-            defender_player_data.aim_skill * 0.7 + defender_player_data.hs_skill * 0.3;
+            defender_player_data.skills.aim * 0.7 + defender_player_data.skills.hs * 0.3;
 
         let attacker_effective_skill = attacker_base_skill * attacker_weapon_effectiveness;
         let defender_effective_skill = defender_base_skill * defender_weapon_effectiveness;
@@ -1192,8 +1192,8 @@ impl ValorantSimulation {
         attacker_win_chance = attacker_win_chance.clamp(0.1f32, 0.9f32);
 
         // Determine hit location and headshot
-        let is_attacker_headshot = rng.random::<f32>() < attacker_player_data.hs_skill;
-        let is_defender_headshot = rng.random::<f32>() < defender_player_data.hs_skill;
+        let is_attacker_headshot = rng.random::<f32>() < attacker_player_data.skills.hs;
+        let is_defender_headshot = rng.random::<f32>() < defender_player_data.skills.hs;
 
         let hit_body_part = if is_attacker_headshot || is_defender_headshot {
             BodyPart::Head
@@ -1389,6 +1389,7 @@ impl ValorantSimulation {
         }
     }
 
+    #[allow(dead_code)]
     fn simulate_buy_phase(&mut self) {
         self.record_event(GameEvent::BuyPhaseStart {
             timestamp: self.state.current_timestamp,

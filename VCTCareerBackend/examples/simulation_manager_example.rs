@@ -1,5 +1,5 @@
-use VCTCareerBackend::models::{EventFilterRequest, SimulationPlayer};
-use VCTCareerBackend::simulation_manager::{
+use vctcareer_backend::models::{EventFilterRequest, SimulationPlayer};
+use vctcareer_backend::simulation_manager::{
     advance_simulation_legacy, control_simulation_legacy, create_simulation,
     create_simulation_manager, get_simulation_events_legacy, get_simulation_state,
     get_simulation_stats_legacy,

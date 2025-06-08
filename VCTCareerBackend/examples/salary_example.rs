@@ -1,5 +1,5 @@
 // Example usage of RegionSalaryInfo::calculate_expected_salary
-use VCTCareerBackend::offers::RegionSalaryInfo;
+use vctcareer_backend::offers::RegionSalaryInfo;
 
 fn main() {
     let info = RegionSalaryInfo {
