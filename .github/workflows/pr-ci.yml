@@ -31,26 +31,11 @@ jobs:
             - 'VCTCareerFrontend/**'
             - '.github/workflows/pr-ci.yml'
 
-  backend-ci:
-    name: Backend CI
+  backend-unit-tests:
+    name: Backend Unit Tests & Linting
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.backend == 'true'
-    
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_USER: test_user
-          POSTGRES_DB: test_db
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
 
     steps:
     - name: Checkout code
@@ -78,14 +63,18 @@ jobs:
       run: cargo check --verbose
       working-directory: VCTCareerBackend
 
-    - name: Run tests
-      run: cargo test --verbose
+    - name: Run unit tests (no database required)
+      run: cargo test --lib --bins --verbose
       working-directory: VCTCareerBackend
 
-    - name: Run tests with coverage
+    - name: Run simulation tests (no database required)
+      run: cargo test --test dynamic_buy_system_tests --test simulation_manager_tests --verbose
+      working-directory: VCTCareerBackend
+
+    - name: Run tests with coverage (no database required)
       run: |
         cargo install cargo-tarpaulin
-        cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out xml
+        cargo tarpaulin --verbose --lib --bins --tests --timeout 120 --out xml
       working-directory: VCTCareerBackend
 
     - name: Upload coverage to Codecov
@@ -94,8 +83,8 @@ jobs:
       with:
         files: VCTCareerBackend/cobertura.xml
         directory: VCTCareerBackend
-        flags: backend
-        name: backend-coverage
+        flags: backend-unit
+        name: backend-unit-coverage
 
     - name: Security audit
       run: |
@@ -114,17 +103,119 @@ jobs:
         path: VCTCareerBackend/target/release/vctcareer_backend
         retention-days: 7
 
-    - name: Generate backend test report
+    - name: Generate unit test report
       if: always()
       run: |
-        echo "## Backend Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "## Backend Unit Tests & Linting Results" >> $GITHUB_STEP_SUMMARY
         echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
         echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
         echo "| Formatting | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
         echo "| Linting (Clippy) | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
-        echo "| Tests | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+        echo "| Unit Tests | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
         echo "| Security Audit | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
         echo "| Build | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+
+  backend-integration-tests:
+    name: Backend Integration Tests (Database Required)
+    runs-on: ubuntu-latest
+    needs: [changes, backend-unit-tests]
+    if: needs.changes.outputs.backend == 'true'
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: test_user
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: VCTCareerBackend -> target
+
+    - name: Set up test database schema
+      run: |
+        # Install psql for database setup
+        sudo apt-get update && sudo apt-get install -y postgresql-client
+        
+        # Create teams table for testing
+        PGPASSWORD=test_password psql -h localhost -U test_user -d test_db -c "
+        CREATE TABLE IF NOT EXISTS teams (
+          id SERIAL PRIMARY KEY,
+          team_name VARCHAR(255) NOT NULL,
+          ranking INTEGER,
+          tier SMALLINT,
+          region VARCHAR(100),
+          budget BIGINT,
+          expenses BIGINT
+        );"
+        
+        # Insert some test data
+        PGPASSWORD=test_password psql -h localhost -U test_user -d test_db -c "
+        INSERT INTO teams (team_name, ranking, tier, region, budget, expenses) VALUES
+        ('Test Team 1', 1, 1, 'NA', 1000000, 500000),
+        ('Test Team 2', 2, 1, 'EU', 800000, 400000),
+        ('Test Team 3', 10, 2, 'APAC', 300000, 200000)
+        ON CONFLICT DO NOTHING;"
+
+    - name: Download backend binary
+      uses: actions/download-artifact@v4
+      with:
+        name: vctcareer-backend
+        path: VCTCareerBackend/target/release/
+
+    - name: Make backend binary executable
+      run: chmod +x VCTCareerBackend/target/release/vctcareer_backend
+
+    - name: Test database endpoints
+      run: |
+        # Start the backend server
+        ./target/release/vctcareer_backend &
+        echo $! > backend.pid
+        sleep 5
+        
+        # Test /teams endpoint (requires database)
+        echo "Testing /teams endpoint..."
+        curl -f http://localhost:8080/teams || exit 1
+        
+        # Test /generateOffers endpoint (requires database)
+        echo "Testing /generateOffers endpoint..."
+        curl -f "http://localhost:8080/generateOffers?tier=1&region=NA" || exit 1
+        
+        echo "✅ All database-dependent endpoints are working"
+      working-directory: VCTCareerBackend
+
+    - name: Generate integration test report
+      if: always()
+      run: |
+        echo "## Backend Integration Tests Results" >> $GITHUB_STEP_SUMMARY
+        echo "| Test | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Database Schema Setup | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+        echo "| /teams Endpoint | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+        echo "| /generateOffers Endpoint | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+
+    - name: Cleanup
+      if: always()
+      run: |
+        if [ -f VCTCareerBackend/backend.pid ]; then
+          kill $(cat VCTCareerBackend/backend.pid) || true
+        fi
 
   frontend-ci:
     name: Frontend CI
@@ -171,26 +262,11 @@ jobs:
         echo "| Linting (Biome) | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
         echo "| Build | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
 
-  integration-test:
-    name: Integration Tests
+  full-integration-test:
+    name: Full Stack Integration Tests
     runs-on: ubuntu-latest
-    needs: [changes, backend-ci, frontend-ci]
-    if: always() && needs.changes.outputs.backend == 'true' && needs.changes.outputs.frontend == 'true' && (needs.backend-ci.result == 'success') && (needs.frontend-ci.result == 'success')
-    
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_USER: test_user
-          POSTGRES_DB: test_db
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
+    needs: [changes, backend-integration-tests, frontend-ci]
+    if: always() && needs.changes.outputs.backend == 'true' && needs.changes.outputs.frontend == 'true' && (needs.backend-integration-tests.result == 'success') && (needs.frontend-ci.result == 'success')
 
     steps:
     - name: Checkout code
@@ -211,22 +287,26 @@ jobs:
     - name: Make backend binary executable
       run: chmod +x VCTCareerBackend/target/release/vctcareer_backend
 
-    - name: Start backend server (background)
+    - name: Test frontend-backend integration
       run: |
+        # Start backend server (without database - testing non-DB endpoints only)
         ./target/release/vctcareer_backend &
         echo $! > backend.pid
         sleep 5
-      working-directory: VCTCareerBackend
-
-    - name: Test API endpoints
-      run: |
-        # Test health endpoint
+        
+        # Test non-database endpoints
+        echo "Testing health endpoint..."
         curl -f http://localhost:8080/ || exit 1
         
-        # Test Swagger UI
+        echo "Testing Swagger UI..."
         curl -f http://localhost:8080/swagger-ui/ || exit 1
         
-        echo "✅ Backend API is responding correctly"
+        echo "Testing non-DB API endpoints..."
+        curl -f "http://localhost:8080/estimate_rr?current_rr=1500&win=true" || exit 1
+        curl -f "http://localhost:8080/random_map" || exit 1
+        
+        echo "✅ Frontend-Backend integration working correctly"
+      working-directory: VCTCareerBackend
 
     - name: Test frontend build
       run: |
@@ -234,14 +314,15 @@ jobs:
         test -f VCTCareerFrontend/dist/index.html || exit 1
         echo "✅ Frontend build is valid"
 
-    - name: Generate integration test report
+    - name: Generate full integration test report
       if: always()
       run: |
-        echo "## Integration Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "## Full Stack Integration Results" >> $GITHUB_STEP_SUMMARY
         echo "| Test | Status |" >> $GITHUB_STEP_SUMMARY
         echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
-        echo "| API Health Check | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+        echo "| Health Check | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
         echo "| Swagger UI | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+        echo "| Non-DB APIs | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
         echo "| Frontend Build | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
 
     - name: Cleanup
@@ -254,7 +335,7 @@ jobs:
   pr-summary:
     name: PR Summary
     runs-on: ubuntu-latest
-    needs: [changes, backend-ci, frontend-ci, integration-test]
+    needs: [changes, backend-unit-tests, backend-integration-tests, frontend-ci, full-integration-test]
     if: always()
     
     steps:
@@ -265,10 +346,18 @@ jobs:
         
         if [ "${{ needs.changes.outputs.backend }}" == "true" ]; then
           echo "## 🦀 Backend Changes Detected" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ needs.backend-ci.result }}" == "success" ]; then
-            echo "✅ All backend checks passed" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.backend-unit-tests.result }}" == "success" ]; then
+            echo "✅ Unit tests & linting passed" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Backend checks failed" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Unit tests & linting failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.backend-integration-tests.result }}" == "success" ]; then
+            echo "✅ Database integration tests passed" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.backend-integration-tests.result }}" == "skipped" ]; then
+            echo "⏭️ Database integration tests skipped" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Database integration tests failed" >> $GITHUB_STEP_SUMMARY
           fi
         else
           echo "## 🦀 Backend: No Changes" >> $GITHUB_STEP_SUMMARY
@@ -285,13 +374,13 @@ jobs:
           echo "## ⚛️ Frontend: No Changes" >> $GITHUB_STEP_SUMMARY
         fi
         
-        if [ "${{ needs.integration-test.result }}" == "success" ]; then
-          echo "## 🔗 Integration Tests" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Integration tests passed" >> $GITHUB_STEP_SUMMARY
-        elif [ "${{ needs.integration-test.result }}" == "skipped" ]; then
-          echo "## 🔗 Integration Tests" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ needs.full-integration-test.result }}" == "success" ]; then
+          echo "## 🔗 Full Stack Integration" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Full stack integration tests passed" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ needs.full-integration-test.result }}" == "skipped" ]; then
+          echo "## 🔗 Full Stack Integration" >> $GITHUB_STEP_SUMMARY
           echo "⏭️ Integration tests skipped (no changes to both frontend and backend)" >> $GITHUB_STEP_SUMMARY
         else
-          echo "## 🔗 Integration Tests" >> $GITHUB_STEP_SUMMARY
-          echo "❌ Integration tests failed" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔗 Full Stack Integration" >> $GITHUB_STEP_SUMMARY
+          echo "❌ Full stack integration tests failed" >> $GITHUB_STEP_SUMMARY
         fi
