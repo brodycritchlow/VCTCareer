@@ -3,8 +3,8 @@ use VCTCareerBackend::sim::GameEvent;
 use VCTCareerBackend::simulation_manager::{
     advance_simulation_legacy, control_simulation_legacy, create_simulation,
     create_simulation_manager, get_events_by_player_legacy, get_events_by_round_legacy,
-    get_events_by_type_legacy, get_events_since_legacy,
-    get_simulation_events_legacy, get_simulation_state, get_simulation_stats_legacy,
+    get_events_by_type_legacy, get_events_since_legacy, get_simulation_events_legacy,
+    get_simulation_state, get_simulation_stats_legacy,
 };
 use uuid::Uuid;
 
