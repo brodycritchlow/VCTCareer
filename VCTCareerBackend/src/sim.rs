@@ -32,6 +32,25 @@ pub enum Agent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+pub enum AgentRole {
+    Duelist,
+    Initiator,
+    Controller,
+    Sentinel,
+}
+
+impl Agent {
+    pub fn get_role(&self) -> AgentRole {
+        match self {
+            Agent::Jett | Agent::Raze | Agent::Phoenix | Agent::Yoru | Agent::Neon => AgentRole::Duelist,
+            Agent::Breach | Agent::Sova | Agent::Skye | Agent::Kayo | Agent::Fade | Agent::Gekko => AgentRole::Initiator,
+            Agent::Omen | Agent::Brimstone | Agent::Viper | Agent::Astra | Agent::Harbor | Agent::Clove => AgentRole::Controller,
+            Agent::Sage | Agent::Cypher | Agent::Killjoy | Agent::Chamber | Agent::Deadlock | Agent::Iso => AgentRole::Sentinel,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub enum Weapon {
     Classic,
     Shorty,
@@ -66,7 +85,7 @@ pub enum BodyPart {
     Legs,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub enum ArmorType {
     None,
     Light, // 25 armor, costs 400
@@ -78,6 +97,58 @@ pub enum Penetration {
     Low,
     Medium,
     High,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub enum RoundType {
+    Pistol,
+    Eco,
+    AntiEco,
+    FullBuy,
+    ForceBuy,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub enum EconomyState {
+    Poor,     // < 2000 avg credits
+    Moderate, // 2000-4000 avg credits
+    Strong,   // > 4000 avg credits
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct WeaponPriority {
+    pub weapon: Weapon,
+    pub priority: f32,
+    pub min_credits: u32,
+    pub situational_modifiers: HashMap<String, f32>, // RoundType as string for HashMap
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct BuyPreferences {
+    pub preferred_weapons: Vec<WeaponPriority>,
+    pub eco_threshold: u32,
+    pub force_buy_tendency: f32,
+    pub utility_priority: f32,
+    pub armor_priority: f32,
+    pub role_weapon_preferences: HashMap<String, Vec<Weapon>>, // AgentRole as string for HashMap
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RoundContext {
+    pub round_type: RoundType,
+    pub team_economy: u32,
+    pub enemy_predicted_economy: EconomyState,
+    pub previous_round_result: Option<RoundEndReason>,
+    pub loss_streak: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct BuyDecision {
+    pub primary_weapon: Option<Weapon>,
+    pub secondary_weapon: Weapon,
+    pub armor: ArmorType,
+    pub total_cost: u32,
+    pub confidence: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -121,11 +192,14 @@ pub struct Player {
     pub ultimate_points: u32,
     pub current_loadout: PlayerLoadout,
 
-    skills: PlayerSkills,
+    pub skills: PlayerSkills,
+    pub buy_preferences: BuyPreferences,
 }
 
 impl Player {
     pub fn new(id: u32, name: String, agent: Agent, team: Team, skills: PlayerSkills) -> Self {
+        let buy_preferences = Self::generate_buy_preferences_for_agent(&agent, &skills);
+        
         Player {
             id,
             name,
@@ -143,6 +217,144 @@ impl Player {
                 abilities_purchased: Vec::new(),
             },
             skills,
+            buy_preferences,
+        }
+    }
+
+    fn generate_buy_preferences_for_agent(agent: &Agent, skills: &PlayerSkills) -> BuyPreferences {
+        let role = agent.get_role();
+        let mut preferred_weapons = Vec::new();
+        
+        // Generate weapon preferences based on agent role and player skills
+        match role {
+            AgentRole::Duelist => {
+                // Duelists prefer rifles and high-damage weapons
+                preferred_weapons.push(WeaponPriority {
+                    weapon: Weapon::Vandal,
+                    priority: 0.9 + skills.aim * 0.1,
+                    min_credits: 2900,
+                    situational_modifiers: HashMap::new(),
+                });
+                preferred_weapons.push(WeaponPriority {
+                    weapon: Weapon::Phantom,
+                    priority: 0.85 + skills.aim * 0.1,
+                    min_credits: 2900,
+                    situational_modifiers: HashMap::new(),
+                });
+                preferred_weapons.push(WeaponPriority {
+                    weapon: Weapon::Operator,
+                    priority: 0.6 + skills.aim * 0.3,
+                    min_credits: 4700,
+                    situational_modifiers: HashMap::new(),
+                });
+                preferred_weapons.push(WeaponPriority {
+                    weapon: Weapon::Spectre,
+                    priority: 0.7,
+                    min_credits: 1600,
+                    situational_modifiers: HashMap::new(),
+                });
+            },
+            AgentRole::Controller => {
+                // Controllers balance utility and weapons
+                preferred_weapons.push(WeaponPriority {
+                    weapon: Weapon::Phantom,
+                    priority: 0.8,
+                    min_credits: 2900,
+                    situational_modifiers: HashMap::new(),
+                });
+                preferred_weapons.push(WeaponPriority {
+                    weapon: Weapon::Vandal,
+                    priority: 0.75,
+                    min_credits: 2900,
+                    situational_modifiers: HashMap::new(),
+                });
+                preferred_weapons.push(WeaponPriority {
+                    weapon: Weapon::Guardian,
+                    priority: 0.6,
+                    min_credits: 2250,
+                    situational_modifiers: HashMap::new(),
+                });
+            },
+            AgentRole::Initiator => {
+                // Initiators prefer versatile weapons
+                preferred_weapons.push(WeaponPriority {
+                    weapon: Weapon::Phantom,
+                    priority: 0.85,
+                    min_credits: 2900,
+                    situational_modifiers: HashMap::new(),
+                });
+                preferred_weapons.push(WeaponPriority {
+                    weapon: Weapon::Vandal,
+                    priority: 0.8,
+                    min_credits: 2900,
+                    situational_modifiers: HashMap::new(),
+                });
+                preferred_weapons.push(WeaponPriority {
+                    weapon: Weapon::Bulldog,
+                    priority: 0.65,
+                    min_credits: 2050,
+                    situational_modifiers: HashMap::new(),
+                });
+            },
+            AgentRole::Sentinel => {
+                // Sentinels prefer defensive weapons and save economy
+                preferred_weapons.push(WeaponPriority {
+                    weapon: Weapon::Operator,
+                    priority: 0.7 + skills.aim * 0.2,
+                    min_credits: 4700,
+                    situational_modifiers: HashMap::new(),
+                });
+                preferred_weapons.push(WeaponPriority {
+                    weapon: Weapon::Guardian,
+                    priority: 0.75,
+                    min_credits: 2250,
+                    situational_modifiers: HashMap::new(),
+                });
+                preferred_weapons.push(WeaponPriority {
+                    weapon: Weapon::Vandal,
+                    priority: 0.7,
+                    min_credits: 2900,
+                    situational_modifiers: HashMap::new(),
+                });
+            },
+        }
+
+        // Add secondary weapon preferences
+        preferred_weapons.push(WeaponPriority {
+            weapon: Weapon::Sheriff,
+            priority: 0.6 + skills.aim * 0.2,
+            min_credits: 800,
+            situational_modifiers: HashMap::new(),
+        });
+        preferred_weapons.push(WeaponPriority {
+            weapon: Weapon::Ghost,
+            priority: 0.5,
+            min_credits: 500,
+            situational_modifiers: HashMap::new(),
+        });
+
+        BuyPreferences {
+            preferred_weapons,
+            eco_threshold: match role {
+                AgentRole::Duelist => 2000,     // Aggressive, lower eco threshold
+                AgentRole::Controller => 2500,  // Moderate eco threshold
+                AgentRole::Initiator => 2200,   // Moderate eco threshold  
+                AgentRole::Sentinel => 3000,    // Conservative, higher eco threshold
+            },
+            force_buy_tendency: match role {
+                AgentRole::Duelist => 0.7,      // High force buy tendency
+                AgentRole::Controller => 0.4,   // Low force buy tendency
+                AgentRole::Initiator => 0.5,    // Moderate force buy tendency
+                AgentRole::Sentinel => 0.3,     // Very low force buy tendency
+            },
+            utility_priority: match role {
+                AgentRole::Controller => 0.8,   // High utility priority
+                AgentRole::Initiator => 0.7,    // High utility priority
+                AgentRole::Sentinel => 0.6,     // Moderate utility priority
+                AgentRole::Duelist => 0.3,      // Low utility priority
+            },
+            armor_priority: 0.8, // Generally high armor priority for all roles
+            role_weapon_preferences: HashMap::new(), // Will be populated later if needed
         }
     }
 
@@ -485,6 +697,34 @@ impl ValorantSimulation {
                 penetration: Penetration::High,
                 magazine_size: 5,
                 reload_time_ms: 3700,
+            },
+        );
+
+        weapon_stats.insert(
+            Weapon::Guardian,
+            WeaponStats {
+                price: 2250,
+                damage_head: (195, 180, 165),
+                damage_body: (65, 60, 55),
+                damage_legs: (48, 45, 41),
+                fire_rate: 4.75,
+                penetration: Penetration::High,
+                magazine_size: 12,
+                reload_time_ms: 2500,
+            },
+        );
+
+        weapon_stats.insert(
+            Weapon::Bulldog,
+            WeaponStats {
+                price: 2050,
+                damage_head: (116, 100, 84),
+                damage_body: (35, 30, 25),
+                damage_legs: (26, 22, 18),
+                fire_rate: 9.15,
+                penetration: Penetration::Medium,
+                magazine_size: 24,
+                reload_time_ms: 2500,
             },
         );
 
@@ -1067,54 +1307,218 @@ impl ValorantSimulation {
             .collect()
     }
 
-    fn calculate_loadout_cost(&self, weapon: &Weapon, armor: &ArmorType) -> u32 {
-        let weapon_cost = self.weapon_stats[weapon].price;
-        let armor_cost = match armor {
-            ArmorType::Heavy => 1000,
-            ArmorType::Light => 400,
-            ArmorType::None => 0,
-        };
-        weapon_cost + armor_cost
+    pub fn determine_round_type(&self, team: &Team) -> RoundType {
+        let team_credits: u32 = self.players
+            .values()
+            .filter(|p| p.team == *team)
+            .map(|p| p.current_credits)
+            .sum();
+        
+        let avg_credits = team_credits / 5; // 5 players per team
+        
+        if self.state.current_round == 1 || self.state.current_round == 13 {
+            RoundType::Pistol
+        } else if avg_credits < 2000 {
+            RoundType::Eco
+        } else if avg_credits > 4500 {
+            RoundType::FullBuy
+        } else if avg_credits < 3000 {
+            let loss_streak = self.loss_streaks.get(team).unwrap_or(&0);
+            if *loss_streak >= 2 {
+                RoundType::ForceBuy
+            } else {
+                RoundType::Eco
+            }
+        } else {
+            RoundType::AntiEco
+        }
     }
 
-    fn simulate_player_purchases(&mut self) {
-        // Pre-calculate all costs to avoid borrowing conflicts
-        let operator_heavy_cost = self.calculate_loadout_cost(&Weapon::Operator, &ArmorType::Heavy);
-        let vandal_heavy_cost = self.calculate_loadout_cost(&Weapon::Vandal, &ArmorType::Heavy);
-        let spectre_cost = self.calculate_loadout_cost(&Weapon::Spectre, &ArmorType::None);
-        let spectre_light_cost = self.calculate_loadout_cost(&Weapon::Spectre, &ArmorType::Light);
-        let sheriff_cost = self.calculate_loadout_cost(&Weapon::Sheriff, &ArmorType::None);
+    pub fn predict_enemy_economy(&self, team: &Team) -> EconomyState {
+        let enemy_team = match team {
+            Team::Attackers => Team::Defenders,
+            Team::Defenders => Team::Attackers,
+        };
+        
+        let enemy_credits: u32 = self.players
+            .values()
+            .filter(|p| p.team == enemy_team)
+            .map(|p| p.current_credits)
+            .sum();
+        
+        let avg_enemy_credits = enemy_credits / 5;
+        
+        if avg_enemy_credits < 2000 {
+            EconomyState::Poor
+        } else if avg_enemy_credits > 4000 {
+            EconomyState::Strong
+        } else {
+            EconomyState::Moderate
+        }
+    }
 
-        for player in self.players.values_mut() {
-            // Reset loadout if they died (don't carry over equipment)
-            if !player.survived_round() {
-                player.current_loadout = PlayerLoadout {
+    pub fn create_round_context(&self, team: &Team) -> RoundContext {
+        let team_credits: u32 = self.players
+            .values()
+            .filter(|p| p.team == *team)
+            .map(|p| p.current_credits)
+            .sum();
+
+        let previous_round_result = self.events
+            .iter()
+            .rev()
+            .find_map(|event| match event {
+                GameEvent::RoundEnd { reason, .. } => Some(reason.clone()),
+                _ => None,
+            });
+
+        RoundContext {
+            round_type: self.determine_round_type(team),
+            team_economy: team_credits,
+            enemy_predicted_economy: self.predict_enemy_economy(team),
+            previous_round_result,
+            loss_streak: *self.loss_streaks.get(team).unwrap_or(&0),
+        }
+    }
+
+    pub fn make_dynamic_buy_decision(&self, player: &Player, context: &RoundContext) -> BuyDecision {
+        let mut best_weapon: Option<Weapon> = None;
+        let mut best_armor = ArmorType::None;
+        let mut remaining_credits = player.current_credits;
+        let mut confidence = 0.5;
+
+        // Check if player should eco based on their preferences and context
+        let should_eco = remaining_credits < player.buy_preferences.eco_threshold
+            && context.round_type != RoundType::ForceBuy
+            && rand::random::<f32>() > player.buy_preferences.force_buy_tendency;
+
+        if should_eco && context.round_type != RoundType::Pistol {
+            // Eco round - only buy cheap utility or save
+            if remaining_credits >= 800 && rand::random::<f32>() < 0.3 {
+                return BuyDecision {
                     primary_weapon: None,
-                    secondary_weapon: Weapon::Classic,
+                    secondary_weapon: Weapon::Sheriff,
                     armor: ArmorType::None,
-                    abilities_purchased: Vec::new(),
+                    total_cost: 800,
+                    confidence: 0.8,
                 };
             }
+            return BuyDecision {
+                primary_weapon: None,
+                secondary_weapon: Weapon::Classic,
+                armor: ArmorType::None,
+                total_cost: 0,
+                confidence: 0.9,
+            };
+        }
 
-            // Dynamic buying strategy with pre-calculated costs
-            if player.current_credits >= operator_heavy_cost {
-                player.current_loadout.primary_weapon = Some(Weapon::Operator);
-                player.current_loadout.armor = ArmorType::Heavy;
-                player.current_credits -= operator_heavy_cost;
-            } else if player.current_credits >= vandal_heavy_cost {
-                player.current_loadout.primary_weapon = Some(Weapon::Vandal);
-                player.current_loadout.armor = ArmorType::Heavy;
-                player.current_credits -= vandal_heavy_cost;
-            } else if player.current_credits >= spectre_light_cost {
-                player.current_loadout.primary_weapon = Some(Weapon::Spectre);
-                player.current_loadout.armor = ArmorType::Light;
-                player.current_credits -= spectre_light_cost;
-            } else if player.current_credits >= spectre_cost {
-                player.current_loadout.primary_weapon = Some(Weapon::Spectre);
-                player.current_credits -= spectre_cost;
-            } else if player.current_credits >= sheriff_cost {
-                player.current_loadout.secondary_weapon = Weapon::Sheriff;
-                player.current_credits -= sheriff_cost;
+        // Sort weapons by priority considering situational modifiers
+        let mut sorted_weapons = player.buy_preferences.preferred_weapons.clone();
+        sorted_weapons.sort_by(|a, b| {
+            let priority_a = a.priority + a.situational_modifiers
+                .get(&format!("{:?}", context.round_type))
+                .unwrap_or(&0.0);
+            let priority_b = b.priority + b.situational_modifiers
+                .get(&format!("{:?}", context.round_type))
+                .unwrap_or(&0.0);
+            priority_b.partial_cmp(&priority_a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Try to buy the highest priority weapon that fits budget
+        for weapon_pref in &sorted_weapons {
+            let weapon_cost = self.weapon_stats[&weapon_pref.weapon].price;
+            let armor_cost = if player.buy_preferences.armor_priority > 0.7 && remaining_credits >= weapon_cost + 1000 {
+                1000 // Heavy armor
+            } else if player.buy_preferences.armor_priority > 0.4 && remaining_credits >= weapon_cost + 400 {
+                400 // Light armor
+            } else {
+                0 // No armor
+            };
+
+            if remaining_credits >= weapon_cost + armor_cost && remaining_credits >= weapon_pref.min_credits {
+                // Check if it's a primary or secondary weapon
+                if matches!(weapon_pref.weapon, Weapon::Classic | Weapon::Shorty | Weapon::Frenzy | Weapon::Ghost | Weapon::Sheriff) {
+                    // Secondary weapon
+                    continue; // Handle secondaries separately
+                } else {
+                    // Primary weapon
+                    best_weapon = Some(weapon_pref.weapon.clone());
+                    remaining_credits -= weapon_cost;
+                    confidence = weapon_pref.priority;
+                    break;
+                }
+            }
+        }
+
+        // Determine armor based on remaining credits and preferences
+        if player.buy_preferences.armor_priority > 0.7 && remaining_credits >= 1000 {
+            best_armor = ArmorType::Heavy;
+            remaining_credits -= 1000;
+        } else if player.buy_preferences.armor_priority > 0.4 && remaining_credits >= 400 {
+            best_armor = ArmorType::Light;
+            remaining_credits -= 400;
+        }
+
+        // Choose secondary weapon
+        let secondary_weapon = if remaining_credits >= 800 && 
+            sorted_weapons.iter().any(|w| w.weapon == Weapon::Sheriff && w.priority > 0.6) {
+            Weapon::Sheriff
+        } else if remaining_credits >= 500 {
+            Weapon::Ghost
+        } else {
+            Weapon::Classic
+        };
+
+        let total_cost = player.current_credits - remaining_credits;
+
+        BuyDecision {
+            primary_weapon: best_weapon,
+            secondary_weapon,
+            armor: best_armor,
+            total_cost,
+            confidence: confidence.clamp(0.1, 1.0),
+        }
+    }
+
+
+    pub fn simulate_player_purchases(&mut self) {
+        // Create round contexts for both teams
+        let attacker_context = self.create_round_context(&Team::Attackers);
+        let defender_context = self.create_round_context(&Team::Defenders);
+
+        // Collect all buy decisions first to avoid borrowing conflicts
+        let mut buy_decisions: HashMap<u32, BuyDecision> = HashMap::new();
+        
+        for player in self.players.values() {
+            // Reset loadout if they died (don't carry over equipment)
+            let context = if player.team == Team::Attackers { 
+                &attacker_context 
+            } else { 
+                &defender_context 
+            };
+            
+            let decision = self.make_dynamic_buy_decision(player, context);
+            buy_decisions.insert(player.id, decision);
+        }
+
+        // Apply buy decisions to players
+        for player in self.players.values_mut() {
+            if let Some(decision) = buy_decisions.get(&player.id) {
+                // Reset loadout if they died (don't carry over equipment)
+                if !player.survived_round() {
+                    player.current_loadout = PlayerLoadout {
+                        primary_weapon: None,
+                        secondary_weapon: Weapon::Classic,
+                        armor: ArmorType::None,
+                        abilities_purchased: Vec::new(),
+                    };
+                }
+
+                // Apply the buy decision
+                player.current_loadout.primary_weapon = decision.primary_weapon.clone();
+                player.current_loadout.secondary_weapon = decision.secondary_weapon.clone();
+                player.current_loadout.armor = decision.armor.clone();
+                player.current_credits = player.current_credits.saturating_sub(decision.total_cost);
             }
         }
     }
@@ -1358,15 +1762,16 @@ impl ValorantSimulation {
 
     fn calculate_weapon_effectiveness(&self, weapon: &Weapon) -> f32 {
         match weapon {
-            Weapon::Operator => 1.5, // Massive aim advantage
-            Weapon::Vandal => 1.2,   // High damage, good accuracy
-            Weapon::Phantom => 1.15, // Good balance
-            Weapon::Guardian => 1.1, // High damage, slower
-            Weapon::Spectre => 0.9,  // Good for close range
-            Weapon::Sheriff => 0.8,  // High damage pistol
-            Weapon::Ghost => 0.6,    // Balanced pistol
-            Weapon::Classic => 0.4,  // Basic weapon
-            _ => 0.7,                // Default effectiveness
+            Weapon::Operator => 1.5,  // Massive aim advantage
+            Weapon::Vandal => 1.2,    // High damage, good accuracy
+            Weapon::Phantom => 1.15,  // Good balance
+            Weapon::Guardian => 1.1,  // High damage, slower
+            Weapon::Bulldog => 1.0,   // Decent rifle alternative
+            Weapon::Spectre => 0.9,   // Good for close range
+            Weapon::Sheriff => 0.8,   // High damage pistol
+            Weapon::Ghost => 0.6,     // Balanced pistol
+            Weapon::Classic => 0.4,   // Basic weapon
+            _ => 0.7,                 // Default effectiveness
         }
     }
 
