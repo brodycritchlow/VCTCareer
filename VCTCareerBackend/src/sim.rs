@@ -125,13 +125,7 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new(
-        id: u32,
-        name: String,
-        agent: Agent,
-        team: Team,
-        skills: PlayerSkills,
-    ) -> Self {
+    pub fn new(id: u32, name: String, agent: Agent, team: Team, skills: PlayerSkills) -> Self {
         Player {
             id,
             name,

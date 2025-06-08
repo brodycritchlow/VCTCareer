@@ -9,11 +9,6 @@ use crate::models::{
     EventFilterRequest, SimulationControlRequest,
 };
 use crate::offers::OfferRequest;
-use vctcareer_backend::ranked::{
-    MapPoolRequest, MatchInput, RandomMapResponse, RankTier, RrEstimateResponse, estimate_rr_change,
-};
-use vctcareer_backend::sim::{Agent, Player, Team, ValorantSimulation};
-use vctcareer_backend::simulation_manager;
 use actix_cors::Cors;
 use actix_web::post;
 use actix_web::{App, HttpResponse, HttpServer, Responder, get, web};
@@ -28,6 +23,11 @@ use tokio_postgres::Config;
 use tokio_postgres::NoTls;
 use utoipa::OpenApi;
 use utoipa_actix_web::AppExt;
+use vctcareer_backend::ranked::{
+    MapPoolRequest, MatchInput, RandomMapResponse, RankTier, RrEstimateResponse, estimate_rr_change,
+};
+use vctcareer_backend::sim::{Agent, Player, Team, ValorantSimulation};
+use vctcareer_backend::simulation_manager;
 
 type SimulationManager = Arc<Mutex<HashMap<uuid::Uuid, ValorantSimulation>>>;
 

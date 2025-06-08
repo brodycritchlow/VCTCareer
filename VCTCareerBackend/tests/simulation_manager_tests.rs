@@ -1,3 +1,4 @@
+use uuid::Uuid;
 use vctcareer_backend::models::{EventFilterRequest, SimulationPlayer};
 use vctcareer_backend::sim::GameEvent;
 use vctcareer_backend::simulation_manager::{
@@ -6,7 +7,6 @@ use vctcareer_backend::simulation_manager::{
     get_events_by_type_legacy, get_events_since_legacy, get_simulation_events_legacy,
     get_simulation_state, get_simulation_stats_legacy,
 };
-use uuid::Uuid;
 
 fn create_mock_players() -> Vec<SimulationPlayer> {
     vec![
