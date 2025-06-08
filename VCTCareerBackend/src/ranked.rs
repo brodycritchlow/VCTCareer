@@ -43,11 +43,15 @@ pub enum RankTier {
     Immortal,
     Radiant,
 }
+#[derive(Debug)]
+pub enum RankTierParseError {
+    InvalidRankName(String)
+}
 
 impl FromStr for RankTier {
-    type Err = ();
+    type Err = RankTierParseError;
 
-    fn from_str(s: &str) -> Result<RankTier, ()> {
+    fn from_str(s: &str) -> Result<RankTier, RankTierParseError> {
         match s.to_lowercase().as_str() {
             "iron" => Ok(RankTier::Iron),
             "bronze" => Ok(RankTier::Bronze),
@@ -58,7 +62,7 @@ impl FromStr for RankTier {
             "ascendant" => Ok(RankTier::Ascendant),
             "immortal" => Ok(RankTier::Immortal),
             "radiant" => Ok(RankTier::Radiant),
-            _ => Err(()),
+            _ => Err(RankTierParseError::InvalidRankName(s.to_string())),
         }
     }
 }
