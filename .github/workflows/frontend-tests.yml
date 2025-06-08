@@ -1,0 +1,48 @@
+name: Frontend Tests
+
+on:
+  push:
+    branches: [ main, LandingPage, "feature/*", "bug/*" ]
+    paths:
+      - 'VCTCareerFrontend/**'
+      - '.github/workflows/frontend-tests.yml'
+  pull_request:
+    branches: [ main, LandingPage ]
+    paths:
+      - 'VCTCareerFrontend/**'
+      - '.github/workflows/frontend-tests.yml'
+
+jobs:
+  test:
+    name: Frontend Tests and Linting
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: VCTCareerFrontend/package-lock.json
+
+    - name: Install dependencies
+      run: npm ci
+      working-directory: VCTCareerFrontend
+
+    - name: Run Biome linter and formatter
+      run: npm run check
+      working-directory: VCTCareerFrontend
+
+    - name: Build project
+      run: npm run build
+      working-directory: VCTCareerFrontend
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-build
+        path: VCTCareerFrontend/dist
+        retention-days: 7

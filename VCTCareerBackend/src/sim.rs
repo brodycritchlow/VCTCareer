@@ -8,6 +8,15 @@ use uuid::Uuid;
 use candle_core::{Device, Result as CandleResult, Tensor, DType};
 use candle_nn::{Module, VarBuilder, VarMap, linear, Linear, ops};
 
+#[derive(Debug, Clone)]
+struct PlayerRoundStats {
+    kills: u8,
+    deaths: u8,
+    assists: u8,
+    survival_rate: f32,
+    avg_damage: f32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub enum Agent {
     Jett,
@@ -3638,13 +3647,378 @@ impl ValorantSimulation {
         insights.player_id = player_id;
         Some(insights)
     }
-}
 
-#[derive(Debug, Clone)]
-struct PlayerRoundStats {
-    kills: u8,
-    deaths: u8,
-    assists: u8,
-    survival_rate: f32,
-    avg_damage: f32,
+    fn simulate_combat(&mut self, alive_attackers: &[u32], alive_defenders: &[u32]) {
+        // Safety check: ensure both teams have alive players
+        if alive_attackers.is_empty() || alive_defenders.is_empty() {
+            return;
+        }
+
+        let mut rng = rand::rng();
+
+        let attacker_id = alive_attackers[rng.random_range(0..alive_attackers.len())];
+        let defender_id = alive_defenders[rng.random_range(0..alive_defenders.len())];
+
+        // Double-check both players are still alive
+        let attacker_still_alive = self.players.get(&attacker_id).is_some_and(|p| p.is_alive);
+        let defender_still_alive = self.players.get(&defender_id).is_some_and(|p| p.is_alive);
+
+        if !attacker_still_alive || !defender_still_alive {
+            return; // Skip combat if either player is dead
+        }
+
+        let attacker_player_data = self.players.get(&attacker_id).unwrap().clone();
+        let defender_player_data = self.players.get(&defender_id).unwrap().clone();
+
+        // Use equipped weapon for combat effectiveness
+        let attacker_weapon = attacker_player_data
+            .current_loadout
+            .primary_weapon
+            .unwrap_or(
+                attacker_player_data
+                    .current_loadout
+                    .secondary_weapon
+                    .clone(),
+            );
+        let defender_weapon = defender_player_data
+            .current_loadout
+            .primary_weapon
+            .unwrap_or(
+                defender_player_data
+                    .current_loadout
+                    .secondary_weapon
+                    .clone(),
+            );
+
+        // Calculate weapon effectiveness multipliers
+        let attacker_weapon_effectiveness = self.calculate_weapon_effectiveness(&attacker_weapon);
+        let defender_weapon_effectiveness = self.calculate_weapon_effectiveness(&defender_weapon);
+
+        // Enhanced combat calculation with weapon stats
+        let attacker_base_skill =
+            attacker_player_data.skills.aim * 0.7 + attacker_player_data.skills.hs * 0.3;
+        let defender_base_skill =
+            defender_player_data.skills.aim * 0.7 + defender_player_data.skills.hs * 0.3;
+
+        let attacker_effective_skill = attacker_base_skill * attacker_weapon_effectiveness;
+        let defender_effective_skill = defender_base_skill * defender_weapon_effectiveness;
+
+        // Fire rate advantage
+        let attacker_fire_rate = self.weapon_stats[&attacker_weapon].fire_rate;
+        let defender_fire_rate = self.weapon_stats[&defender_weapon].fire_rate;
+
+        let fire_rate_advantage = (attacker_fire_rate / defender_fire_rate).clamp(0.5, 2.0);
+
+        let mut attacker_win_chance =
+            0.5 + (attacker_effective_skill - defender_effective_skill) * 0.3;
+        attacker_win_chance *= fire_rate_advantage;
+        attacker_win_chance = attacker_win_chance.clamp(0.1f32, 0.9f32);
+
+        // Determine hit location and headshot
+        let is_attacker_headshot = rng.random::<f32>() < attacker_player_data.skills.hs;
+        let is_defender_headshot = rng.random::<f32>() < defender_player_data.skills.hs;
+
+        let hit_body_part = if is_attacker_headshot || is_defender_headshot {
+            BodyPart::Head
+        } else if rng.random::<f32>() < 0.7 {
+            BodyPart::Body
+        } else {
+            BodyPart::Legs
+        };
+
+        // Simulate engagement range (10-50 meters)
+        let engagement_range = rng.random_range(10.0..50.0);
+
+        if rng.random::<f32>() < attacker_win_chance {
+            // Attacker wins
+            let damage = self.calculate_weapon_damage(
+                &attacker_weapon,
+                &defender_player_data.current_loadout.armor,
+                hit_body_part,
+                engagement_range,
+            );
+
+            if let Some(victim) = self.players.get_mut(&defender_id) {
+                victim.take_damage(damage);
+            }
+
+            // Only record kill if both killer is alive and victim actually died
+            if let (Some(killer), Some(victim)) = (
+                self.players.get(&attacker_id),
+                self.players.get(&defender_id),
+            ) {
+                if killer.is_alive && !victim.is_alive {
+                    self.record_event(GameEvent::Kill {
+                        timestamp: self.state.current_timestamp,
+                        killer_id: attacker_id,
+                        victim_id: defender_id,
+                        weapon: attacker_weapon,
+                        is_headshot: is_attacker_headshot,
+                    });
+                    self.award_kill_bonus(attacker_id);
+                }
+            }
+        } else {
+            // Defender wins
+            let damage = self.calculate_weapon_damage(
+                &defender_weapon,
+                &attacker_player_data.current_loadout.armor,
+                hit_body_part,
+                engagement_range,
+            );
+
+            if let Some(victim) = self.players.get_mut(&attacker_id) {
+                victim.take_damage(damage);
+            }
+
+            // Only record kill if both killer is alive and victim actually died
+            if let (Some(killer), Some(victim)) = (
+                self.players.get(&defender_id),
+                self.players.get(&attacker_id),
+            ) {
+                if killer.is_alive && !victim.is_alive {
+                    self.record_event(GameEvent::Kill {
+                        timestamp: self.state.current_timestamp,
+                        killer_id: defender_id,
+                        victim_id: attacker_id,
+                        weapon: defender_weapon,
+                        is_headshot: is_defender_headshot,
+                    });
+                    self.award_kill_bonus(defender_id);
+                }
+            }
+        }
+    }
+
+    fn calculate_round_rewards(
+        &mut self,
+        winning_team: &Team,
+        _reason: &RoundEndReason,
+        spike_planted: bool,
+    ) {
+        // Award credits based on Valorant economy system
+        for player in self.players.values_mut() {
+            let mut credits_earned = 0;
+
+            if player.team == *winning_team {
+                // Win reward
+                credits_earned += 3000;
+
+                // Reset loss streak for winning team
+                self.loss_streaks.insert(player.team.clone(), 0);
+            } else {
+                // Loss reward with streak bonus
+                let loss_streak = self.loss_streaks.get(&player.team).unwrap_or(&0);
+                credits_earned += match loss_streak {
+                    0 => 1900, // First loss
+                    1 => 2400, // Second consecutive loss
+                    _ => 2900, // Third+ consecutive loss
+                };
+
+                // Update loss streak
+                self.loss_streaks
+                    .insert(player.team.clone(), loss_streak + 1);
+
+                // Survival bonus (if they survived a lost round)
+                if player.survived_round() {
+                    credits_earned = credits_earned.min(1000); // Cap at 1000 for survival
+                }
+            }
+
+            // Spike plant bonus (300 credits per team member)
+            if spike_planted && player.team == Team::Attackers {
+                credits_earned += 300;
+            }
+
+            player.current_credits = (player.current_credits + credits_earned).min(9000);
+        }
+    }
+
+    fn calculate_weapon_damage(
+        &self,
+        weapon: &Weapon,
+        armor_type: &ArmorType,
+        body_part: BodyPart,
+        range_meters: f32,
+    ) -> u32 {
+        let stats = &self.weapon_stats[weapon];
+
+        let base_damage = match body_part {
+            BodyPart::Head => match armor_type {
+                ArmorType::None => stats.damage_head.0,
+                ArmorType::Light => stats.damage_head.1,
+                ArmorType::Heavy => stats.damage_head.2,
+            },
+            BodyPart::Body => match armor_type {
+                ArmorType::None => stats.damage_body.0,
+                ArmorType::Light => stats.damage_body.1,
+                ArmorType::Heavy => stats.damage_body.2,
+            },
+            BodyPart::Legs => match armor_type {
+                ArmorType::None => stats.damage_legs.0,
+                ArmorType::Light => stats.damage_legs.1,
+                ArmorType::Heavy => stats.damage_legs.2,
+            },
+        };
+
+        // Apply range penalties (simplified)
+        let damage_multiplier = match weapon {
+            Weapon::Phantom => {
+                if range_meters <= 15.0 {
+                    1.0
+                } else if range_meters <= 30.0 {
+                    0.85
+                } else {
+                    0.7
+                }
+            }
+            Weapon::Spectre | Weapon::Stinger => {
+                if range_meters <= 20.0 {
+                    1.0
+                } else {
+                    0.75
+                }
+            }
+            _ => 1.0, // No damage falloff for most weapons
+        };
+
+        (base_damage as f32 * damage_multiplier) as u32
+    }
+
+    fn calculate_weapon_effectiveness(&self, weapon: &Weapon) -> f32 {
+        match weapon {
+            Weapon::Operator => 1.5, // Massive aim advantage
+            Weapon::Vandal => 1.2,   // High damage, good accuracy
+            Weapon::Phantom => 1.15, // Good balance
+            Weapon::Guardian => 1.1, // High damage, slower
+            Weapon::Spectre => 0.9,  // Good for close range
+            Weapon::Sheriff => 0.8,  // High damage pistol
+            Weapon::Ghost => 0.6,    // Balanced pistol
+            Weapon::Classic => 0.4,  // Basic weapon
+            _ => 0.7,                // Default effectiveness
+        }
+    }
+
+    fn award_kill_bonus(&mut self, killer_id: u32) {
+        if let Some(killer) = self.players.get_mut(&killer_id) {
+            killer.current_credits = (killer.current_credits + 200).min(9000);
+            killer.ultimate_points += 1; // TODO: Implement proper ult point system
+        }
+    }
+
+    fn award_spike_plant_bonus(&mut self, planter_id: u32) {
+        if let Some(planter) = self.players.get_mut(&planter_id) {
+            planter.ultimate_points += 1; // TODO: Implement proper ult point system
+        }
+    }
+
+    #[allow(dead_code)]
+    fn simulate_buy_phase(&mut self) {
+        self.record_event(GameEvent::BuyPhaseStart {
+            timestamp: self.state.current_timestamp,
+            round_number: self.state.current_round,
+        });
+
+        // Simple AI buying logic
+        for player in self.players.values_mut() {
+            // Reset loadout if they died (don't carry over equipment)
+            if !player.survived_round() {
+                player.current_loadout = PlayerLoadout {
+                    primary_weapon: None,
+                    secondary_weapon: Weapon::Classic,
+                    armor: ArmorType::None,
+                    abilities_purchased: Vec::new(),
+                };
+            }
+
+            // Basic buying strategy
+            if player.current_credits >= 5700 {
+                // Operator + Heavy armor
+                player.current_loadout.primary_weapon = Some(Weapon::Operator);
+                player.current_loadout.armor = ArmorType::Heavy;
+                player.current_credits -= 5700;
+            } else if player.current_credits >= 3900 {
+                // Vandal + Heavy armor
+                player.current_loadout.primary_weapon = Some(Weapon::Vandal);
+                player.current_loadout.armor = ArmorType::Heavy;
+                player.current_credits -= 3900;
+            } else if player.current_credits >= 1600 {
+                // SMG buy
+                player.current_loadout.primary_weapon = Some(Weapon::Spectre);
+                player.current_credits -= 1600;
+                if player.current_credits >= 400 {
+                    player.current_loadout.armor = ArmorType::Light;
+                    player.current_credits -= 400;
+                }
+            } else if player.current_credits >= 800 {
+                // Pistol upgrade
+                player.current_loadout.secondary_weapon = Weapon::Sheriff;
+                player.current_credits -= 800;
+            }
+        }
+
+        self.advance_time(30000); // 30 second buy phase
+
+        self.record_event(GameEvent::BuyPhaseEnd {
+            timestamp: self.state.current_timestamp,
+            round_number: self.state.current_round,
+        });
+    }
+
+    // Convenience method for running entire simulation at once (legacy mode)
+    pub fn run_simulation_to_completion(&mut self) -> Result<(), String> {
+        self.start_simulation();
+
+        let mut tick_count = 0;
+        const MAX_TICKS_PER_MATCH: u64 = 50000; // Prevent infinite loops (about 4 hours at 500ms per tick)
+
+        while !matches!(self.state.phase, SimulationPhase::MatchEnd { .. }) {
+            tick_count += 1;
+            if tick_count > MAX_TICKS_PER_MATCH {
+                return Err(format!(
+                    "Match simulation exceeded maximum tick limit ({}). Possible infinite loop detected.",
+                    MAX_TICKS_PER_MATCH
+                ));
+            }
+
+            self.advance_tick()?;
+        }
+
+        Ok(())
+    }
+
+    // High-level control methods for frontend
+    pub fn advance_round(&mut self) -> Result<(), String> {
+        let mut tick_count = 0;
+        const MAX_TICKS_PER_ROUND: u64 = 2000; // Prevent infinite loops (10 minutes at 500ms per tick)
+
+        loop {
+            tick_count += 1;
+            if tick_count > MAX_TICKS_PER_ROUND {
+                return Err(format!(
+                    "Round advancement exceeded maximum tick limit ({}). Possible infinite loop detected.",
+                    MAX_TICKS_PER_ROUND
+                ));
+            }
+
+            self.advance_tick()?;
+            if matches!(
+                self.state.phase,
+                SimulationPhase::RoundEnd { .. } | SimulationPhase::MatchEnd { .. }
+            ) {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn advance_multiple_ticks(&mut self, count: u32) -> Result<(), String> {
+        for _ in 0..count {
+            self.advance_tick()?;
+            if matches!(self.state.phase, SimulationPhase::MatchEnd { .. }) {
+                break;
+            }
+        }
+        Ok(())
+    }
 }
