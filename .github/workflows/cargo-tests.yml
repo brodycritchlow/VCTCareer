@@ -1,0 +1,67 @@
+name: Cargo Tests
+
+on:
+  push:
+    branches: [ main, LandingPage, "feature/*", "bug/*" ]
+    paths:
+      - 'VCTCareerBackend/**'
+  pull_request:
+    branches: [ main, LandingPage ]
+    paths:
+      - 'VCTCareerBackend/**'
+
+env:
+  CARGO_TERM_COLOR: always
+  DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+
+jobs:
+  test:
+    name: Run Cargo Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: test_user
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Cargo dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: VCTCareerBackend -> target
+
+    - name: Run cargo check
+      run: cargo check --verbose
+      working-directory: VCTCareerBackend
+
+    - name: Run cargo tests
+      run: cargo test --verbose
+      working-directory: VCTCareerBackend
+
+    - name: Generate test report
+      if: always()
+      run: |
+        echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "| Status | Details |" >> $GITHUB_STEP_SUMMARY
+        echo "|--------|---------|" >> $GITHUB_STEP_SUMMARY
+        if [ $? -eq 0 ]; then
+          echo "| ✅ | All tests passed successfully |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| ❌ | Some tests failed |" >> $GITHUB_STEP_SUMMARY
+        fi

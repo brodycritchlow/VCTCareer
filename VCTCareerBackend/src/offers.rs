@@ -1,8 +1,6 @@
-use actix_web::HttpResponse;
-use rand::seq::SliceRandom;
 use rand::Rng;
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use utoipa::ToSchema;
@@ -115,7 +113,7 @@ pub async fn generate_offers(
         expected_salaries.insert(region.clone(), salary);
     }
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     for row in rows {
         let team: String = row.get("team_name");
         let region: String = row.get("region");
@@ -123,10 +121,13 @@ pub async fn generate_offers(
         let expenses: i64 = row.get::<_, Option<i64>>("expenses").unwrap_or(0);
 
         if let Some(expected_salary) = expected_salaries.get(&region) {
-            let contract_length_months = rng.gen_range(1..=3) * 12 as u32;
+            let contract_length_months = rng.random_range(1..=3) * 12_u32;
 
-            let pm_factor = region_offer_extrema.get(region.as_str()).unwrap().plus_minus;
-            let variance = rng.gen_range(-pm_factor..=pm_factor);
+            let pm_factor = region_offer_extrema
+                .get(region.as_str())
+                .unwrap()
+                .plus_minus;
+            let variance = rng.random_range(-pm_factor..=pm_factor);
             let yearly_salary = (*expected_salary + variance as f64) as u32;
 
             if yearly_salary <= budget as u32 - expenses as u32 {

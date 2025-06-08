@@ -1,4 +1,5 @@
-use actix_web::{post, web, App, HttpResponse, HttpServer, Responder};
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -42,20 +43,26 @@ pub enum RankTier {
     Immortal,
     Radiant,
 }
+#[derive(Debug)]
+pub enum RankTierParseError {
+    InvalidRankName(String),
+}
 
-impl RankTier {
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for RankTier {
+    type Err = RankTierParseError;
+
+    fn from_str(s: &str) -> Result<RankTier, RankTierParseError> {
         match s.to_lowercase().as_str() {
-            "iron" => Some(RankTier::Iron),
-            "bronze" => Some(RankTier::Bronze),
-            "silver" => Some(RankTier::Silver),
-            "gold" => Some(RankTier::Gold),
-            "platinum" => Some(RankTier::Platinum),
-            "diamond" => Some(RankTier::Diamond),
-            "ascendant" => Some(RankTier::Ascendant),
-            "immortal" => Some(RankTier::Immortal),
-            "radiant" => Some(RankTier::Radiant),
-            _ => None,
+            "iron" => Ok(RankTier::Iron),
+            "bronze" => Ok(RankTier::Bronze),
+            "silver" => Ok(RankTier::Silver),
+            "gold" => Ok(RankTier::Gold),
+            "platinum" => Ok(RankTier::Platinum),
+            "diamond" => Ok(RankTier::Diamond),
+            "ascendant" => Ok(RankTier::Ascendant),
+            "immortal" => Ok(RankTier::Immortal),
+            "radiant" => Ok(RankTier::Radiant),
+            _ => Err(RankTierParseError::InvalidRankName(s.to_string())),
         }
     }
 }
@@ -106,10 +113,16 @@ pub fn estimate_rr_change(input: &MatchInput, rank: RankTier) -> i32 {
             -15 + round_diff
         };
 
-        if input.is_win && matches!(
-            rank,
-            RankTier::Iron | RankTier::Bronze | RankTier::Silver | RankTier::Gold | RankTier::Platinum
-        ) {
+        if input.is_win
+            && matches!(
+                rank,
+                RankTier::Iron
+                    | RankTier::Bronze
+                    | RankTier::Silver
+                    | RankTier::Gold
+                    | RankTier::Platinum
+            )
+        {
             if input.acs_percentile > 0.95 {
                 rr += 5;
             } else if input.acs_percentile > 0.85 {
@@ -144,7 +157,9 @@ where
     impl<'de> Visitor<'de> for MapsVisitor {
         type Value = Vec<String>;
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a sequence, repeated query params, or a comma-separated string for maps")
+            formatter.write_str(
+                "a sequence, repeated query params, or a comma-separated string for maps",
+            )
         }
         fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
         where
@@ -161,9 +176,12 @@ where
             E: Error,
         {
             // Split on commas and trim whitespace
-            Ok(value.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+            Ok(value
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect())
         }
     }
     deserializer.deserialize_any(MapsVisitor)
 }
-
