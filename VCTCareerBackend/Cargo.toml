@@ -20,7 +20,16 @@ utoipa-swagger-ui = { version = "9.0.2", features = ["actix-web"] }
 crossterm = "0.28"
 ratatui = "0.29"
 
+# Machine Learning with Candle
+candle-core = "0.8.0"
+candle-nn = "0.8.0"
+candle-transformers = "0.8.0"
+
 [[example]]
 name = "simulation_manager_example"
 path = "examples/simulation_manager_example.rs"
+
+[[example]]
+name = "neural_buy_system_example"
+path = "examples/neural_buy_system_example.rs"
 

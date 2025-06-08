@@ -24,6 +24,9 @@ cargo clippy                 # Run linter
 # Run specific examples
 cargo run --example simulation_manager_example
 cargo run --example modern_simulation_example
+cargo run --example buy_system_showcase           # Dynamic buy system demo
+cargo run --example dynamic_buy_system_example    # Comprehensive features demo
+cargo run --example neural_buy_system_example     # Neural network ML demo
 ```
 
 ### Frontend (React)
@@ -54,6 +57,8 @@ Note: Frontend README indicates using `pnpm` but package.json uses `npm` scripts
 ### Simulation Engine Features
 The simulation engine (`sim.rs` + `simulation_manager.rs`) provides:
 - **Real-time match simulation**: Tick-based Valorant match simulation with weapon mechanics
+- **Dynamic buy system**: Role-based weapon preferences, team coordination, utility budgets
+- **Agent role system**: Duelist, Controller, Initiator, Sentinel with distinct behaviors
 - **Player statistics tracking**: KDA, damage, headshot percentages, economy
 - **Event system**: Comprehensive game event logging (kills, deaths, round events)
 - **Advanced controls**: Pause/resume, speed adjustment, checkpoint creation/restoration
@@ -75,13 +80,19 @@ The simulation engine (`sim.rs` + `simulation_manager.rs`) provides:
 ### Environment Requirements
 - Backend requires `DATABASE_URL` environment variable for PostgreSQL connection
 - Backend uses `.env` files for configuration (dotenv)
+- Database schema includes `teams` table with columns: team_name, ranking, tier, region, budget, expenses
+
+### API Endpoint Categories
+- **Database-dependent**: `/teams`, `/generateOffers` (require PostgreSQL)
+- **In-memory only**: `/createCareer`, `/estimate_rr`, `/random_map`, all `/simulation/*` endpoints
 
 ## Testing Strategy
 
 ### Backend Tests
-- Unit tests in `tests/simulation_manager_tests.rs` for simulation functionality
-- Run tests with `cargo test` from VCTCareerBackend directory
+- Unit tests in `tests/simulation_manager_tests.rs` and `tests/dynamic_buy_system_tests.rs`
+- Run specific test suites: `cargo test --test dynamic_buy_system_tests` or `cargo test --test simulation_manager_tests`
 - Examples serve as integration test patterns in `examples/` directory
+- Test separation: Unit tests (no database) vs integration tests (require PostgreSQL)
 
 ### Code Quality
 - Backend: Use `cargo fmt` and `cargo clippy` before committing
@@ -102,3 +113,53 @@ The simulation engine (`sim.rs` + `simulation_manager.rs`) provides:
 - Simulation state is managed in-memory via `simulation_manager.rs`
 - All game events are logged and queryable for debugging and analytics
 - Examples in `examples/` directory demonstrate proper simulation API usage
+
+## GitHub Actions and CI/CD
+
+### Workflow Structure
+- **PR Workflow**: Comprehensive testing only on pull requests to reduce resource usage
+- **Main Workflow**: Lightweight validation on main branch pushes
+- **Optimized Testing**: Unit tests run without PostgreSQL, integration tests run with database
+
+### Local Testing
+```bash
+# Validate GitHub Actions syntax before committing
+./scripts/test-github-actions.sh validate
+
+# Test individual components
+./scripts/test-github-actions.sh backend-unit    # Fast backend tests (no DB)
+./scripts/test-github-actions.sh frontend       # Frontend linting and build
+```
+
+### Database Testing Strategy
+- **Unit tests**: No database required (`cargo test --lib --bins --test dynamic_buy_system_tests`)
+- **Integration tests**: Require PostgreSQL for `/teams` and `/generateOffers` endpoints
+- **CI Optimization**: PostgreSQL service only runs when testing database-dependent functionality
+
+## Dynamic Buy System Architecture
+
+The dynamic buy system in `sim.rs` implements a sophisticated agent-based purchasing AI:
+
+### Implementation Phases
+- **Phase 1**: Player preferences and role specialization (implemented)
+- **Phase 2**: Enhanced situational context and team coordination (implemented)
+- **Phase 3**: Machine Learning integration with Candle neural networks (implemented)
+- **Phase 4**: Advanced analytics and learning system (planned)
+
+### Key Components
+- **Agent Roles**: Duelist (aggressive), Controller (utility-focused), Initiator (balanced), Sentinel (conservative)
+- **Buy Preferences**: Role-based weapon priorities, economic thresholds, force buy tendencies
+- **Team Coordination**: Team buy strategies, utility budget allocation, composition awareness
+- **Round Context**: Economy state detection, round type classification, loss streak analysis
+
+### Testing the Buy System
+```bash
+# Showcase different economic scenarios
+cargo run --example buy_system_showcase
+
+# Comprehensive feature demonstration
+cargo run --example dynamic_buy_system_example
+
+# Debug individual buy decisions
+cargo run --example debug_buy_system
+```

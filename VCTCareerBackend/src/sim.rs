@@ -4,6 +4,10 @@ use std::collections::HashMap;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+// Candle ML imports
+use candle_core::{Device, Result as CandleResult, Tensor, DType};
+use candle_nn::{Module, VarBuilder, VarMap, linear, Linear, ops};
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub enum Agent {
     Jett,
@@ -99,7 +103,7 @@ pub enum Penetration {
     High,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, ToSchema)]
 pub enum RoundType {
     Pistol,
     Eco,
@@ -133,7 +137,7 @@ pub struct BuyPreferences {
     pub role_weapon_preferences: HashMap<String, Vec<Weapon>>, // AgentRole as string for HashMap
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct RoundContext {
     pub round_type: RoundType,
     pub team_economy: u32,
@@ -142,7 +146,7 @@ pub struct RoundContext {
     pub loss_streak: u8,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct BuyDecision {
     pub primary_weapon: Option<Weapon>,
     pub secondary_weapon: Weapon,
@@ -190,6 +194,104 @@ pub struct TeamComposition {
     pub operator_players: u8,
 }
 
+// Phase 3: Machine Learning Integration Data Structures
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct BuyPerformanceMetrics {
+    #[schema(value_type = String)]
+    pub decision_id: Uuid,
+    pub player_id: u32,
+    pub round_number: u8,
+    pub buy_decision: BuyDecision,
+    pub round_context: RoundContext,
+    pub performance_outcome: Option<RoundPerformanceOutcome>,
+    pub timestamp: Timestamp,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct RoundPerformanceOutcome {
+    pub round_won: bool,
+    pub kills: u8,
+    pub deaths: u8,
+    pub assists: u8,
+    pub damage_dealt: u32,
+    pub damage_taken: u32,
+    pub clutch_situation: bool,
+    pub first_kill: bool,
+    pub multi_kill: bool,
+    pub round_impact_score: f32, // 0.0 to 1.0 rating of round contribution
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct LearningWeights {
+    pub weapon_success_rate: f32,
+    pub economic_efficiency: f32,
+    pub team_synergy_bonus: f32,
+    pub situational_adaptation: f32,
+    pub recent_performance_bias: f32, // How much to weight recent vs historical data
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct AdaptiveBuyPreferences {
+    pub base_preferences: BuyPreferences,
+    pub learned_adjustments: HashMap<String, f32>, // Contextual adjustments to base preferences
+    pub success_rates: HashMap<String, WeaponSuccessRate>, // Per-weapon success tracking
+    pub learning_weights: LearningWeights,
+    pub confidence_threshold: f32, // Minimum confidence to deviate from base preferences
+    pub adaptation_rate: f32, // How quickly to adapt to new data (0.0 to 1.0)
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct WeaponSuccessRate {
+    pub weapon: Weapon,
+    pub total_rounds: u32,
+    pub successful_rounds: u32, // Rounds where the weapon choice led to positive outcomes
+    pub average_impact: f32,
+    pub context_success: HashMap<String, ContextualSuccess>, // Success by round type, economy, etc.
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ContextualSuccess {
+    pub context_key: String, // e.g., "FullBuy_Strong_Economy", "Eco_Poor_Economy"
+    pub success_count: u32,
+    pub total_count: u32,
+    pub average_performance: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct PlayerLearningProfile {
+    pub player_id: u32,
+    pub adaptive_preferences: AdaptiveBuyPreferences,
+    pub playstyle_pattern: PlaystylePattern,
+    pub meta_adaptation: MetaAdaptation,
+    pub performance_history: Vec<BuyPerformanceMetrics>,
+    pub last_updated: Timestamp,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub enum PlaystylePattern {
+    Aggressive,      // Prefers high-impact weapons, higher force buy tendency
+    Conservative,    // Saves more, prefers reliable weapons
+    Adaptive,        // Changes style based on game state
+    Supportive,      // Prioritizes team utility over individual fragging
+    Experimental,    // Tries different weapons/strategies more often
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct MetaAdaptation {
+    pub current_meta_score: f32, // How well player's style fits current meta
+    pub meta_trends: Vec<MetaTrend>,
+    pub adaptation_suggestions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct MetaTrend {
+    pub trend_type: String, // e.g., "OperatorMeta", "EcoRush", "UtilityFocus"
+    pub strength: f32, // How strong this trend is (0.0 to 1.0)
+    pub player_alignment: f32, // How well player aligns with this trend
+    pub impact_on_success: f32, // Measured impact on win rate
+}
+
 #[derive(Debug, Clone)]
 pub struct WeaponStats {
     pub price: u32,
@@ -218,7 +320,283 @@ pub struct PlayerSkills {
     pub util: f32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct PlayerLearningInsights {
+    pub player_id: u32,
+    pub total_rounds_analyzed: u32,
+    pub current_playstyle: PlaystylePattern,
+    pub recent_avg_impact: f32,
+    pub most_successful_weapon: Option<Weapon>,
+    pub adaptation_rate: f32,
+    pub learning_trend: String, // "Improving", "Declining", "Stable", "Learning"
+    pub confidence_score: f32,
+}
+
+// Phase 3.5: Candle Neural Network Integration
+
+#[derive(Debug, Clone)]
+pub struct BuyDecisionNetwork {
+    pub input_layer: Linear,
+    pub hidden_layer1: Linear,
+    pub hidden_layer2: Linear,
+    pub output_layer: Linear,
+    pub device: Device,
+}
+
+impl BuyDecisionNetwork {
+    const INPUT_SIZE: usize = 32; // Player features + game state + context
+    const HIDDEN_SIZE1: usize = 64;
+    const HIDDEN_SIZE2: usize = 32;
+    const OUTPUT_SIZE: usize = 15; // Weapon confidences + eco decision + armor choices
+
+    pub fn new(vs: VarBuilder) -> CandleResult<Self> {
+        let input_layer = linear(Self::INPUT_SIZE, Self::HIDDEN_SIZE1, vs.pp("input"))?;
+        let hidden_layer1 = linear(Self::HIDDEN_SIZE1, Self::HIDDEN_SIZE2, vs.pp("hidden1"))?;
+        let hidden_layer2 = linear(Self::HIDDEN_SIZE2, Self::HIDDEN_SIZE2, vs.pp("hidden2"))?;
+        let output_layer = linear(Self::HIDDEN_SIZE2, Self::OUTPUT_SIZE, vs.pp("output"))?;
+        
+        Ok(Self {
+            input_layer,
+            hidden_layer1,
+            hidden_layer2,
+            output_layer,
+            device: vs.device().clone(),
+        })
+    }
+
+    pub fn forward(&self, input: &Tensor) -> CandleResult<Tensor> {
+        let x = self.input_layer.forward(input)?;
+        let x = x.relu()?;
+        
+        let x = self.hidden_layer1.forward(&x)?;
+        let x = x.relu()?;
+        
+        let x = self.hidden_layer2.forward(&x)?;
+        let x = x.relu()?;
+        
+        let output = self.output_layer.forward(&x)?;
+        ops::sigmoid(&output) // Output probabilities/confidences
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GameStateFeatures {
+    // Player features (10 dimensions)
+    pub player_credits: f32,
+    pub player_kills: f32,
+    pub player_deaths: f32,
+    pub player_assists: f32,
+    pub player_survival_rate: f32,
+    pub player_avg_damage: f32,
+    pub player_headshot_rate: f32,
+    pub player_aim_skill: f32,
+    pub player_utility_skill: f32,
+    pub player_movement_skill: f32,
+    
+    // Game context features (12 dimensions)
+    pub round_number: f32,
+    pub team_score: f32,
+    pub enemy_score: f32,
+    pub team_economy: f32,
+    pub enemy_economy: f32,
+    pub loss_streak: f32,
+    pub round_type_pistol: f32,
+    pub round_type_eco: f32,
+    pub round_type_fullbuy: f32,
+    pub round_type_forcebuy: f32,
+    pub round_type_antieco: f32,
+    pub map_side: f32, // 0.0 for attacker, 1.0 for defender
+    
+    // Role features (4 dimensions)
+    pub is_duelist: f32,
+    pub is_controller: f32,
+    pub is_initiator: f32,
+    pub is_sentinel: f32,
+    
+    // Team coordination features (6 dimensions)
+    pub team_rifles_needed: f32,
+    pub team_utility_budget: f32,
+    pub coordination_priority: f32,
+    pub team_strategy_eco: f32,
+    pub team_strategy_force: f32,
+    pub team_strategy_full: f32,
+}
+
+impl GameStateFeatures {
+    pub fn to_tensor(&self, device: &Device) -> CandleResult<Tensor> {
+        let features = vec![
+            // Player features
+            self.player_credits,
+            self.player_kills,
+            self.player_deaths,
+            self.player_assists,
+            self.player_survival_rate,
+            self.player_avg_damage,
+            self.player_headshot_rate,
+            self.player_aim_skill,
+            self.player_utility_skill,
+            self.player_movement_skill,
+            
+            // Game context features
+            self.round_number,
+            self.team_score,
+            self.enemy_score,
+            self.team_economy,
+            self.enemy_economy,
+            self.loss_streak,
+            self.round_type_pistol,
+            self.round_type_eco,
+            self.round_type_fullbuy,
+            self.round_type_forcebuy,
+            self.round_type_antieco,
+            self.map_side,
+            
+            // Role features
+            self.is_duelist,
+            self.is_controller,
+            self.is_initiator,
+            self.is_sentinel,
+            
+            // Team coordination features
+            self.team_rifles_needed,
+            self.team_utility_budget,
+            self.coordination_priority,
+            self.team_strategy_eco,
+            self.team_strategy_force,
+            self.team_strategy_full,
+        ];
+        
+        Tensor::from_vec(features, (1, BuyDecisionNetwork::INPUT_SIZE), device)
+    }
+}
+
+#[derive(Clone)]
+pub struct NeuralBuyPredictor {
+    pub network: BuyDecisionNetwork,
+    pub var_map: VarMap,
+    pub device: Device,
+    pub training_data: Vec<(GameStateFeatures, BuyDecisionTarget)>,
+    pub learning_rate: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct BuyDecisionTarget {
+    // Target outputs (15 dimensions matching network output)
+    pub weapon_confidences: Vec<f32>, // 10 weapons
+    pub should_eco: f32,
+    pub should_force: f32,
+    pub armor_priority: f32,
+    pub utility_priority: f32,
+    pub overall_confidence: f32,
+}
+
+impl NeuralBuyPredictor {
+    pub fn new() -> CandleResult<Self> {
+        let device = Device::Cpu; // Can be changed to GPU if available
+        let var_map = VarMap::new();
+        let vs = VarBuilder::from_varmap(&var_map, DType::F32, &device);
+        
+        let network = BuyDecisionNetwork::new(vs)?;
+        
+        Ok(Self {
+            network,
+            var_map,
+            device,
+            training_data: Vec::new(),
+            learning_rate: 0.001,
+        })
+    }
+
+    pub fn predict(&self, features: &GameStateFeatures) -> CandleResult<BuyDecisionTarget> {
+        let input = features.to_tensor(&self.device)?;
+        let output = self.network.forward(&input)?;
+        
+        let output_vec = output.flatten_all()?.to_vec1::<f32>()?;
+        
+        Ok(BuyDecisionTarget {
+            weapon_confidences: output_vec[0..10].to_vec(),
+            should_eco: output_vec[10],
+            should_force: output_vec[11],
+            armor_priority: output_vec[12],
+            utility_priority: output_vec[13],
+            overall_confidence: output_vec[14],
+        })
+    }
+
+    pub fn add_training_example(&mut self, features: GameStateFeatures, target: BuyDecisionTarget) {
+        self.training_data.push((features, target));
+        
+        // Keep only recent training data (last 1000 examples)
+        if self.training_data.len() > 1000 {
+            self.training_data.remove(0);
+        }
+    }
+
+    pub fn train_step(&mut self) -> CandleResult<f32> {
+        if self.training_data.len() < 10 {
+            return Ok(0.0); // Not enough data to train
+        }
+
+        // Sample a batch of training data
+        let batch_size = (self.training_data.len().min(32)) as usize;
+        let mut batch_features = Vec::new();
+        let mut batch_targets = Vec::new();
+        
+        for _i in 0..batch_size {
+            let idx = rand::Rng::random_range(&mut rand::rng(), 0..self.training_data.len());
+            let (features, target) = &self.training_data[idx];
+            batch_features.push(features.clone());
+            batch_targets.push(target.clone());
+        }
+
+        // Convert to tensors
+        let mut input_data = Vec::new();
+        let mut target_data = Vec::new();
+        
+        for (features, target) in batch_features.iter().zip(batch_targets.iter()) {
+            let input_tensor = features.to_tensor(&self.device)?;
+            input_data.push(input_tensor.flatten_all()?.to_vec1::<f32>()?);
+            
+            let mut target_vec = target.weapon_confidences.clone();
+            target_vec.extend_from_slice(&[
+                target.should_eco,
+                target.should_force,
+                target.armor_priority,
+                target.utility_priority,
+                target.overall_confidence,
+            ]);
+            target_data.push(target_vec);
+        }
+
+        // Create batch tensors
+        let input_batch = Tensor::from_vec(
+            input_data.into_iter().flatten().collect::<Vec<f32>>(),
+            (batch_size, BuyDecisionNetwork::INPUT_SIZE),
+            &self.device,
+        )?;
+        
+        let target_batch = Tensor::from_vec(
+            target_data.into_iter().flatten().collect::<Vec<f32>>(),
+            (batch_size, BuyDecisionNetwork::OUTPUT_SIZE),
+            &self.device,
+        )?;
+
+        // Forward pass
+        let predicted = self.network.forward(&input_batch)?;
+        
+        // Calculate MSE loss
+        let loss = predicted.sub(&target_batch)?.sqr()?.mean_all()?;
+        let loss_value = loss.to_scalar::<f32>()?;
+
+        // TODO: Implement backward pass and weight updates
+        // This would require gradient computation which is more complex in Candle
+        // For now, we'll return the loss for monitoring
+        
+        Ok(loss_value)
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Player {
     pub id: u32,
     pub name: String,
@@ -233,6 +611,11 @@ pub struct Player {
 
     pub skills: PlayerSkills,
     pub buy_preferences: BuyPreferences,
+    // Phase 3: ML Integration
+    pub learning_profile: Option<PlayerLearningProfile>,
+    // Phase 3.5: Neural Network Integration
+    #[serde(skip)] // Don't serialize the neural network
+    pub neural_predictor: Option<NeuralBuyPredictor>,
 }
 
 impl Player {
@@ -257,6 +640,8 @@ impl Player {
             },
             skills,
             buy_preferences,
+            learning_profile: None, // Initialize without ML profile, will be created when ML is enabled
+            neural_predictor: None, // Initialize without neural network, will be created when enabled
         }
     }
 
@@ -429,6 +814,261 @@ impl Player {
 
     pub fn survived_round(&self) -> bool {
         self.is_alive
+    }
+
+    // Phase 3: Machine Learning Methods
+
+    pub fn enable_neural_learning(&mut self) -> Result<(), String> {
+        match NeuralBuyPredictor::new() {
+            Ok(predictor) => {
+                self.neural_predictor = Some(predictor);
+                Ok(())
+            }
+            Err(e) => Err(format!("Failed to initialize neural network: {:?}", e))
+        }
+    }
+
+    pub fn enable_machine_learning(&mut self, current_timestamp: Timestamp) {
+        if self.learning_profile.is_none() {
+            self.learning_profile = Some(Self::create_initial_learning_profile(
+                self.id,
+                &self.buy_preferences,
+                &self.agent,
+                current_timestamp,
+            ));
+        }
+    }
+
+    fn create_initial_learning_profile(
+        player_id: u32,
+        base_preferences: &BuyPreferences,
+        agent: &Agent,
+        timestamp: Timestamp,
+    ) -> PlayerLearningProfile {
+        let role = agent.get_role();
+        
+        // Initialize adaptive preferences based on role
+        let adaptive_preferences = AdaptiveBuyPreferences {
+            base_preferences: base_preferences.clone(),
+            learned_adjustments: HashMap::new(),
+            success_rates: HashMap::new(),
+            learning_weights: LearningWeights {
+                weapon_success_rate: 0.4,
+                economic_efficiency: 0.25,
+                team_synergy_bonus: 0.2,
+                situational_adaptation: 0.1,
+                recent_performance_bias: 0.05,
+            },
+            confidence_threshold: 0.7,
+            adaptation_rate: match role {
+                AgentRole::Duelist => 0.3,      // Aggressive learners
+                AgentRole::Controller => 0.15,  // Conservative learners
+                AgentRole::Initiator => 0.25,   // Moderate learners
+                AgentRole::Sentinel => 0.2,     // Deliberate learners
+            },
+        };
+
+        // Determine initial playstyle pattern based on role and base preferences
+        let playstyle_pattern = match role {
+            AgentRole::Duelist => PlaystylePattern::Aggressive,
+            AgentRole::Controller => PlaystylePattern::Supportive,
+            AgentRole::Initiator => PlaystylePattern::Adaptive,
+            AgentRole::Sentinel => PlaystylePattern::Conservative,
+        };
+
+        let meta_adaptation = MetaAdaptation {
+            current_meta_score: 0.5, // Neutral starting score
+            meta_trends: Vec::new(),
+            adaptation_suggestions: Vec::new(),
+        };
+
+        PlayerLearningProfile {
+            player_id,
+            adaptive_preferences,
+            playstyle_pattern,
+            meta_adaptation,
+            performance_history: Vec::new(),
+            last_updated: timestamp,
+        }
+    }
+
+    pub fn record_buy_performance(&mut self, 
+        decision_id: Uuid,
+        buy_decision: BuyDecision,
+        round_context: RoundContext,
+        performance_outcome: Option<RoundPerformanceOutcome>,
+        timestamp: Timestamp,
+    ) {
+        if let Some(ref mut profile) = self.learning_profile {
+            let metrics = BuyPerformanceMetrics {
+                decision_id,
+                player_id: self.id,
+                round_number: round_context.round_type as u8, // Approximation
+                buy_decision,
+                round_context: round_context.clone(),
+                performance_outcome,
+                timestamp,
+            };
+
+            profile.performance_history.push(metrics);
+            profile.last_updated = timestamp;
+
+            // Keep only recent history (last 100 rounds) for performance
+            if profile.performance_history.len() > 100 {
+                profile.performance_history.remove(0);
+            }
+        }
+    }
+
+    pub fn update_weapon_success_rates(&mut self) {
+        if let Some(ref mut profile) = self.learning_profile {
+            // Clear existing success rates
+            profile.adaptive_preferences.success_rates.clear();
+
+            // Group performance by weapon
+            let mut weapon_data: HashMap<Weapon, Vec<&BuyPerformanceMetrics>> = HashMap::new();
+            
+            for metrics in &profile.performance_history {
+                if let Some(weapon) = &metrics.buy_decision.primary_weapon {
+                    weapon_data.entry(weapon.clone()).or_insert_with(Vec::new).push(metrics);
+                }
+            }
+
+            // Calculate success rates for each weapon
+            for (weapon, metrics_list) in weapon_data {
+                let total_rounds = metrics_list.len() as u32;
+                let successful_rounds = metrics_list.iter()
+                    .filter(|m| {
+                        if let Some(outcome) = &m.performance_outcome {
+                            outcome.round_impact_score > 0.5 // Consider 0.5+ as successful
+                        } else {
+                            false
+                        }
+                    })
+                    .count() as u32;
+
+                let average_impact = metrics_list.iter()
+                    .filter_map(|m| m.performance_outcome.as_ref())
+                    .map(|o| o.round_impact_score)
+                    .sum::<f32>() / total_rounds as f32;
+
+                // Build contextual success data
+                let mut context_success = HashMap::new();
+                Self::build_contextual_success_data_static(&metrics_list, &mut context_success);
+
+                let success_rate = WeaponSuccessRate {
+                    weapon: weapon.clone(),
+                    total_rounds,
+                    successful_rounds,
+                    average_impact,
+                    context_success,
+                };
+
+                profile.adaptive_preferences.success_rates.insert(
+                    format!("{:?}", weapon), 
+                    success_rate
+                );
+            }
+        }
+    }
+
+    fn build_contextual_success_data_static(
+        metrics_list: &[&BuyPerformanceMetrics],
+        context_success: &mut HashMap<String, ContextualSuccess>,
+    ) {
+        for metrics in metrics_list {
+            let context_key = format!(
+                "{:?}_{:?}", 
+                metrics.round_context.round_type,
+                metrics.round_context.enemy_predicted_economy
+            );
+
+            let entry = context_success.entry(context_key.clone()).or_insert(ContextualSuccess {
+                context_key: context_key.clone(),
+                success_count: 0,
+                total_count: 0,
+                average_performance: 0.0,
+            });
+
+            entry.total_count += 1;
+            if let Some(outcome) = &metrics.performance_outcome {
+                if outcome.round_impact_score > 0.5 {
+                    entry.success_count += 1;
+                }
+                entry.average_performance = 
+                    ((entry.average_performance * (entry.total_count - 1) as f32) + outcome.round_impact_score) 
+                    / entry.total_count as f32;
+            }
+        }
+    }
+
+    pub fn adapt_buy_preferences(&mut self) {
+        if let Some(ref mut profile) = self.learning_profile {
+            // Only adapt if we have sufficient data
+            if profile.performance_history.len() < 10 {
+                return;
+            }
+
+            let adaptation_rate = profile.adaptive_preferences.adaptation_rate;
+            
+            // Analyze recent performance trends
+            let recent_performance: Vec<&BuyPerformanceMetrics> = profile.performance_history
+                .iter()
+                .rev()
+                .take(20) // Last 20 rounds
+                .collect();
+
+            // Update learned adjustments based on performance
+            for weapon_name in profile.adaptive_preferences.success_rates.keys() {
+                if let Some(success_rate) = profile.adaptive_preferences.success_rates.get(weapon_name) {
+                    let success_ratio = success_rate.successful_rounds as f32 / success_rate.total_rounds as f32;
+                    
+                    // Adjust weapon priority based on success rate
+                    let adjustment = if success_ratio > 0.7 {
+                        adaptation_rate * 0.1 // Increase priority for successful weapons
+                    } else if success_ratio < 0.3 {
+                        -adaptation_rate * 0.1 // Decrease priority for unsuccessful weapons
+                    } else {
+                        0.0 // No change for neutral performance
+                    };
+
+                    profile.adaptive_preferences.learned_adjustments.insert(
+                        weapon_name.clone(),
+                        adjustment,
+                    );
+                }
+            }
+
+            // Update playstyle pattern based on recent performance
+            Self::update_playstyle_pattern_static(&mut profile.playstyle_pattern, &recent_performance);
+        }
+    }
+
+    fn update_playstyle_pattern_static(
+        playstyle_pattern: &mut PlaystylePattern,
+        recent_performance: &[&BuyPerformanceMetrics]
+    ) {
+        // Analyze patterns in recent buy decisions
+        let aggressive_decisions = recent_performance.iter()
+            .filter(|m| {
+                matches!(m.buy_decision.primary_weapon, 
+                         Some(Weapon::Operator) | Some(Weapon::Vandal) | Some(Weapon::Phantom))
+            })
+            .count();
+
+        let conservative_decisions = recent_performance.iter()
+            .filter(|m| m.buy_decision.total_cost < 2000)
+            .count();
+
+        let total_decisions = recent_performance.len();
+
+        if aggressive_decisions as f32 / total_decisions as f32 > 0.7 {
+            *playstyle_pattern = PlaystylePattern::Aggressive;
+        } else if conservative_decisions as f32 / total_decisions as f32 > 0.6 {
+            *playstyle_pattern = PlaystylePattern::Conservative;
+        } else {
+            *playstyle_pattern = PlaystylePattern::Adaptive;
+        }
     }
 }
 
@@ -627,7 +1267,7 @@ pub struct ValorantSimulation {
     pub round_start_timestamp: Timestamp,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SimulationCheckpoint {
     pub state: SimulationState,
     pub players: HashMap<u32, Player>,
@@ -1428,10 +2068,31 @@ impl ValorantSimulation {
         let mut abilities_budget = 0u32;
         let mut coordination_priority: f32 = 0.5;
 
+        // Use adaptive preferences if ML is enabled, otherwise use base preferences
+        let (preferred_weapons, eco_threshold, force_buy_tendency, armor_priority, utility_priority) = 
+            if let Some(ref learning_profile) = player.learning_profile {
+                let adaptive = &learning_profile.adaptive_preferences;
+                (
+                    &adaptive.base_preferences.preferred_weapons,
+                    adaptive.base_preferences.eco_threshold,
+                    adaptive.base_preferences.force_buy_tendency,
+                    adaptive.base_preferences.armor_priority,
+                    adaptive.base_preferences.utility_priority,
+                )
+            } else {
+                (
+                    &player.buy_preferences.preferred_weapons,
+                    player.buy_preferences.eco_threshold,
+                    player.buy_preferences.force_buy_tendency,
+                    player.buy_preferences.armor_priority,
+                    player.buy_preferences.utility_priority,
+                )
+            };
+
         // Check if player should eco based on their preferences and context
-        let should_eco = remaining_credits < player.buy_preferences.eco_threshold
+        let should_eco = remaining_credits < eco_threshold
             && context.round_type != RoundType::ForceBuy
-            && rand::random::<f32>() > player.buy_preferences.force_buy_tendency;
+            && rand::random::<f32>() > force_buy_tendency;
 
         if should_eco && context.round_type != RoundType::Pistol {
             // Eco round - only buy cheap utility or save
@@ -1475,7 +2136,7 @@ impl ValorantSimulation {
         }
 
         // Sort weapons by priority considering situational modifiers
-        let mut sorted_weapons = player.buy_preferences.preferred_weapons.clone();
+        let mut sorted_weapons = preferred_weapons.clone();
         sorted_weapons.sort_by(|a, b| {
             let priority_a = a.priority + a.situational_modifiers
                 .get(&format!("{:?}", context.round_type))
@@ -1487,7 +2148,7 @@ impl ValorantSimulation {
         });
 
         // Calculate utility budget based on role and preferences
-        let base_utility_budget = (remaining_credits as f32 * player.buy_preferences.utility_priority * 0.3) as u32;
+        let base_utility_budget = (remaining_credits as f32 * utility_priority * 0.3) as u32;
         abilities_budget = match role {
             AgentRole::Controller => base_utility_budget.max(800).min(1500), // Controllers need smokes
             AgentRole::Initiator => base_utility_budget.max(600).min(1200),  // Initiators need info abilities
@@ -1501,9 +2162,9 @@ impl ValorantSimulation {
         // Try to buy the highest priority weapon that fits budget
         for weapon_pref in &sorted_weapons {
             let weapon_cost = self.weapon_stats[&weapon_pref.weapon].price;
-            let armor_cost = if player.buy_preferences.armor_priority > 0.7 && remaining_credits >= weapon_cost + 1000 {
+            let armor_cost = if armor_priority > 0.7 && remaining_credits >= weapon_cost + 1000 {
                 1000 // Heavy armor
-            } else if player.buy_preferences.armor_priority > 0.4 && remaining_credits >= weapon_cost + 400 {
+            } else if armor_priority > 0.4 && remaining_credits >= weapon_cost + 400 {
                 400 // Light armor
             } else {
                 0 // No armor
@@ -1525,10 +2186,10 @@ impl ValorantSimulation {
         }
 
         // Determine armor based on remaining credits and preferences
-        if player.buy_preferences.armor_priority > 0.7 && remaining_credits >= 1000 {
+        if armor_priority > 0.7 && remaining_credits >= 1000 {
             best_armor = ArmorType::Heavy;
             remaining_credits -= 1000;
-        } else if player.buy_preferences.armor_priority > 0.4 && remaining_credits >= 400 {
+        } else if armor_priority > 0.4 && remaining_credits >= 400 {
             best_armor = ArmorType::Light;
             remaining_credits -= 400;
         }
@@ -1545,13 +2206,21 @@ impl ValorantSimulation {
 
         let total_cost = player.current_credits - remaining_credits;
 
+        // Phase 3: ML-Enhanced Confidence Scoring
+        let final_confidence = self.calculate_ml_confidence(
+            player,
+            &best_weapon,
+            context,
+            confidence,
+        );
+
         BuyDecision {
             primary_weapon: best_weapon,
             secondary_weapon,
             armor: best_armor,
             abilities_budget,
             total_cost,
-            confidence: confidence.clamp(0.1, 1.0),
+            confidence: final_confidence.clamp(0.1, 1.0),
             coordination_priority: coordination_priority.clamp(0.1, 1.0),
         }
     }
@@ -2219,4 +2888,628 @@ impl ValorantSimulation {
         }
         Ok(())
     }
+
+    // Phase 3: Machine Learning Integration Methods
+
+    pub fn enable_ml_for_player(&mut self, player_id: u32) -> Result<(), String> {
+        if let Some(player) = self.players.get_mut(&player_id) {
+            player.enable_machine_learning(self.state.current_timestamp);
+            Ok(())
+        } else {
+            Err(format!("Player with ID {} not found", player_id))
+        }
+    }
+
+    pub fn enable_ml_for_all_players(&mut self) {
+        for player in self.players.values_mut() {
+            player.enable_machine_learning(self.state.current_timestamp);
+        }
+    }
+
+    pub fn enable_neural_learning_for_player(&mut self, player_id: u32) -> Result<(), String> {
+        if let Some(player) = self.players.get_mut(&player_id) {
+            player.enable_neural_learning()
+        } else {
+            Err(format!("Player with ID {} not found", player_id))
+        }
+    }
+
+    pub fn enable_neural_learning_for_all_players(&mut self) -> Vec<String> {
+        let mut errors = Vec::new();
+        
+        for player in self.players.values_mut() {
+            if let Err(e) = player.enable_neural_learning() {
+                errors.push(format!("Player {}: {}", player.id, e));
+            }
+        }
+        
+        errors
+    }
+
+    pub fn train_neural_networks(&mut self) -> HashMap<u32, f32> {
+        let mut training_losses = HashMap::new();
+        
+        for player in self.players.values_mut() {
+            if let Some(ref mut predictor) = player.neural_predictor {
+                match predictor.train_step() {
+                    Ok(loss) => {
+                        training_losses.insert(player.id, loss);
+                    }
+                    Err(_) => {
+                        // Training failed, continue with other players
+                        training_losses.insert(player.id, f32::INFINITY);
+                    }
+                }
+            }
+        }
+        
+        training_losses
+    }
+
+    pub fn get_players(&self) -> &HashMap<u32, Player> {
+        &self.players
+    }
+
+    pub fn get_players_mut(&mut self) -> &mut HashMap<u32, Player> {
+        &mut self.players
+    }
+
+    pub fn record_round_performance(&mut self, round_number: u8) {
+        let current_timestamp = self.state.current_timestamp;
+        
+        // Find the last buy decisions for this round
+        let mut buy_decisions: HashMap<u32, (Uuid, BuyDecision, RoundContext)> = HashMap::new();
+        
+        // Create contexts for performance evaluation
+        for player in self.players.values() {
+            let context = if player.team == Team::Attackers {
+                self.create_round_context(&Team::Attackers)
+            } else {
+                self.create_round_context(&Team::Defenders)
+            };
+            
+            // Generate a decision ID and simulate the buy decision for tracking
+            let decision_id = Uuid::new_v4();
+            let decision = self.make_dynamic_buy_decision(player, &context);
+            
+            buy_decisions.insert(player.id, (decision_id, decision, context));
+        }
+
+        // Calculate performance outcomes first to avoid borrowing conflicts
+        let mut performance_outcomes: HashMap<u32, Option<RoundPerformanceOutcome>> = HashMap::new();
+        for player_id in buy_decisions.keys() {
+            let performance_outcome = self.calculate_round_performance_outcome(*player_id, round_number);
+            performance_outcomes.insert(*player_id, performance_outcome);
+        }
+
+        // Prepare neural network training data first (before mutable borrows)
+        let mut neural_training_data: HashMap<u32, (GameStateFeatures, BuyDecisionTarget)> = HashMap::new();
+        for (player_id, (_, buy_decision, round_context)) in &buy_decisions {
+            if let Some(player) = self.players.get(player_id) {
+                if player.neural_predictor.is_some() {
+                    let features = self.extract_game_features(player, round_context);
+                    if let Some(actual_outcome) = performance_outcomes.get(player_id).unwrap() {
+                        let target = self.create_neural_target_from_outcome(buy_decision, actual_outcome);
+                        neural_training_data.insert(*player_id, (features, target));
+                    }
+                }
+            }
+        }
+
+        // Apply performance tracking to each player
+        for (player_id, (decision_id, buy_decision, round_context)) in buy_decisions {
+            if let Some(player) = self.players.get_mut(&player_id) {
+                let performance_outcome = performance_outcomes.get(&player_id).unwrap().clone();
+                
+                player.record_buy_performance(
+                    decision_id,
+                    buy_decision,
+                    round_context,
+                    performance_outcome,
+                    current_timestamp,
+                );
+                
+                // Update success rates and adapt preferences
+                player.update_weapon_success_rates();
+                player.adapt_buy_preferences();
+                
+                // Add training example to neural network if available
+                if let Some((features, target)) = neural_training_data.remove(&player_id) {
+                    if let Some(ref mut predictor) = player.neural_predictor {
+                        predictor.add_training_example(features, target);
+                    }
+                }
+            }
+        }
+    }
+
+    fn calculate_round_performance_outcome(&self, player_id: u32, round_number: u8) -> Option<RoundPerformanceOutcome> {
+        let player = self.players.get(&player_id)?;
+        
+        // Count player's round events
+        let round_events: Vec<&GameEvent> = self.events
+            .iter()
+            .filter(|event| {
+                match event {
+                    GameEvent::Kill { .. } => true,
+                    GameEvent::RoundEnd { round_number: r, .. } => *r == round_number,
+                    _ => false,
+                }
+            })
+            .collect();
+
+        let mut kills = 0;
+        let mut deaths = 0;
+        let mut survived = true;
+        let mut round_won = false;
+
+        for event in round_events {
+            match event {
+                GameEvent::Kill { killer_id, victim_id, .. } => {
+                    if *killer_id == player_id {
+                        kills += 1;
+                    }
+                    if *victim_id == player_id {
+                        deaths += 1;
+                        survived = false;
+                    }
+                }
+                GameEvent::RoundEnd { winning_team, round_number: r, .. } if *r == round_number => {
+                    round_won = *winning_team == player.team;
+                }
+                _ => {}
+            }
+        }
+
+        // Calculate impact score based on performance
+        let mut impact_score = 0.0;
+        
+        // Kill contribution (0-0.4)
+        impact_score += (kills as f32 * 0.1).min(0.4);
+        
+        // Survival bonus (0-0.2)
+        if survived {
+            impact_score += 0.2;
+        }
+        
+        // Round win bonus (0-0.3)
+        if round_won {
+            impact_score += 0.3;
+        }
+        
+        // Death penalty (reduce by 0.1 per death)
+        impact_score -= deaths as f32 * 0.1;
+        
+        // Clamp between 0 and 1
+        impact_score = impact_score.max(0.0).min(1.0);
+
+        Some(RoundPerformanceOutcome {
+            round_won,
+            kills,
+            deaths,
+            assists: 0, // TODO: Track assists from events
+            damage_dealt: kills as u32 * 140, // Approximate damage based on kills
+            damage_taken: if survived { 0 } else { 100 }, // Approximate damage taken
+            clutch_situation: false, // TODO: Detect clutch situations
+            first_kill: false, // TODO: Track first kills
+            multi_kill: kills > 1,
+            round_impact_score: impact_score,
+        })
+    }
+
+    pub fn get_player_learning_insights(&self, player_id: u32) -> Option<PlayerLearningInsights> {
+        let player = self.players.get(&player_id)?;
+        let learning_profile = player.learning_profile.as_ref()?;
+        
+        // Calculate learning statistics
+        let total_rounds = learning_profile.performance_history.len();
+        let recent_rounds = learning_profile.performance_history
+            .iter()
+            .rev()
+            .take(10)
+            .collect::<Vec<_>>();
+        
+        let recent_avg_impact = if recent_rounds.is_empty() {
+            0.0
+        } else {
+            recent_rounds
+                .iter()
+                .filter_map(|m| m.performance_outcome.as_ref())
+                .map(|o| o.round_impact_score)
+                .sum::<f32>() / recent_rounds.len() as f32
+        };
+        
+        // Find most successful weapon
+        let best_weapon = learning_profile.adaptive_preferences.success_rates
+            .values()
+            .max_by(|a, b| {
+                let a_ratio = a.successful_rounds as f32 / a.total_rounds as f32;
+                let b_ratio = b.successful_rounds as f32 / b.total_rounds as f32;
+                a_ratio.partial_cmp(&b_ratio).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|rate| rate.weapon.clone());
+        
+        // Calculate learning trend (improving/declining/stable)
+        let learning_trend = if total_rounds >= 20 {
+            let first_half_avg: f32 = learning_profile.performance_history
+                .iter()
+                .take(total_rounds / 2)
+                .filter_map(|m| m.performance_outcome.as_ref())
+                .map(|o| o.round_impact_score)
+                .sum::<f32>() / (total_rounds / 2) as f32;
+            
+            let second_half_avg: f32 = learning_profile.performance_history
+                .iter()
+                .skip(total_rounds / 2)
+                .filter_map(|m| m.performance_outcome.as_ref())
+                .map(|o| o.round_impact_score)
+                .sum::<f32>() / (total_rounds / 2) as f32;
+            
+            let improvement = second_half_avg - first_half_avg;
+            if improvement > 0.1 {
+                "Improving".to_string()
+            } else if improvement < -0.1 {
+                "Declining".to_string()
+            } else {
+                "Stable".to_string()
+            }
+        } else {
+            "Learning".to_string()
+        };
+
+        Some(PlayerLearningInsights {
+            player_id,
+            total_rounds_analyzed: total_rounds as u32,
+            current_playstyle: learning_profile.playstyle_pattern.clone(),
+            recent_avg_impact,
+            most_successful_weapon: best_weapon,
+            adaptation_rate: learning_profile.adaptive_preferences.adaptation_rate,
+            learning_trend,
+            confidence_score: learning_profile.adaptive_preferences.confidence_threshold,
+        })
+    }
+
+    fn calculate_ml_confidence(
+        &self,
+        player: &Player,
+        weapon: &Option<Weapon>,
+        context: &RoundContext,
+        base_confidence: f32,
+    ) -> f32 {
+        // If player doesn't have ML enabled, return base confidence
+        let learning_profile = match &player.learning_profile {
+            Some(profile) => profile,
+            None => return base_confidence,
+        };
+
+        // If insufficient data, return base confidence with slight penalty
+        if learning_profile.performance_history.len() < 5 {
+            return base_confidence * 0.9;
+        }
+
+        let mut ml_confidence = base_confidence;
+
+        // Factor 1: Weapon success rate (40% weight)
+        if let Some(weapon) = weapon {
+            let weapon_key = format!("{:?}", weapon);
+            if let Some(success_rate) = learning_profile.adaptive_preferences.success_rates.get(&weapon_key) {
+                let weapon_confidence = success_rate.successful_rounds as f32 / success_rate.total_rounds as f32;
+                ml_confidence = ml_confidence * 0.6 + weapon_confidence * 0.4;
+            }
+        }
+
+        // Factor 2: Contextual success (25% weight)
+        let context_key = format!("{:?}_{:?}", context.round_type, context.team_economy);
+        if let Some(weapon) = weapon {
+            let weapon_key = format!("{:?}", weapon);
+            if let Some(success_rate) = learning_profile.adaptive_preferences.success_rates.get(&weapon_key) {
+                if let Some(contextual) = success_rate.context_success.get(&context_key) {
+                    let contextual_confidence = contextual.success_count as f32 / contextual.total_count as f32;
+                    ml_confidence = ml_confidence * 0.75 + contextual_confidence * 0.25;
+                }
+            }
+        }
+
+        // Factor 3: Recent performance trend (20% weight)
+        let recent_performance: Vec<&BuyPerformanceMetrics> = learning_profile.performance_history
+            .iter()
+            .rev()
+            .take(10)
+            .collect();
+
+        if !recent_performance.is_empty() {
+            let recent_avg_impact = recent_performance
+                .iter()
+                .filter_map(|m| m.performance_outcome.as_ref())
+                .map(|o| o.round_impact_score)
+                .sum::<f32>() / recent_performance.len() as f32;
+
+            ml_confidence = ml_confidence * 0.8 + recent_avg_impact * 0.2;
+        }
+
+        // Factor 4: Playstyle match bonus (10% weight)
+        let playstyle_bonus = match (&learning_profile.playstyle_pattern, weapon) {
+            (PlaystylePattern::Aggressive, Some(Weapon::Operator | Weapon::Vandal | Weapon::Phantom)) => 0.1,
+            (PlaystylePattern::Conservative, Some(Weapon::Guardian | Weapon::Bulldog)) => 0.1,
+            (PlaystylePattern::Supportive, _) if context.round_type == RoundType::AntiEco => 0.1,
+            (PlaystylePattern::Adaptive, _) => 0.05, // Always gets small bonus
+            (PlaystylePattern::Experimental, _) => -0.05, // Slight penalty for unpredictability
+            _ => 0.0,
+        };
+
+        ml_confidence += playstyle_bonus;
+
+        // Factor 5: Confidence threshold adjustment (5% weight)
+        let confidence_threshold = learning_profile.adaptive_preferences.confidence_threshold;
+        if ml_confidence < confidence_threshold {
+            ml_confidence *= 0.95; // Slightly reduce if below threshold
+        }
+
+        ml_confidence
+    }
+
+    // Phase 3.5: Neural Network Feature Engineering
+
+    fn extract_game_features(&self, player: &Player, context: &RoundContext) -> GameStateFeatures {
+        let role = player.agent.get_role();
+        let team_players: Vec<&Player> = self.players.values()
+            .filter(|p| p.team == player.team)
+            .collect();
+        let enemy_players: Vec<&Player> = self.players.values()
+            .filter(|p| p.team != player.team)
+            .collect();
+
+        // Calculate player statistics
+        let player_stats = self.calculate_player_round_stats(player.id);
+        
+        // Normalize features to 0-1 range for better neural network performance
+        let normalized_credits = (player.current_credits as f32 / 9000.0).min(1.0);
+        let team_economy = team_players.iter().map(|p| p.current_credits).sum::<u32>() as f32 / (team_players.len() as f32 * 9000.0);
+        let enemy_economy = enemy_players.iter().map(|p| p.current_credits).sum::<u32>() as f32 / (enemy_players.len() as f32 * 9000.0);
+        
+        GameStateFeatures {
+            // Player features (normalized)
+            player_credits: normalized_credits,
+            player_kills: (player_stats.kills as f32 / 5.0).min(1.0),
+            player_deaths: (player_stats.deaths as f32 / 5.0).min(1.0),
+            player_assists: (player_stats.assists as f32 / 10.0).min(1.0),
+            player_survival_rate: player_stats.survival_rate,
+            player_avg_damage: (player_stats.avg_damage / 200.0).min(1.0),
+            player_headshot_rate: player.skills.hs,
+            player_aim_skill: player.skills.aim,
+            player_utility_skill: player.skills.util,
+            player_movement_skill: player.skills.movement,
+            
+            // Game context features
+            round_number: (self.state.current_round as f32 / 25.0).min(1.0),
+            team_score: (self.state.attacker_score as f32 / 13.0).min(1.0),
+            enemy_score: (self.state.defender_score as f32 / 13.0).min(1.0),
+            team_economy,
+            enemy_economy,
+            loss_streak: (context.loss_streak as f32 / 5.0).min(1.0),
+            round_type_pistol: if context.round_type == RoundType::Pistol { 1.0 } else { 0.0 },
+            round_type_eco: if context.round_type == RoundType::Eco { 1.0 } else { 0.0 },
+            round_type_fullbuy: if context.round_type == RoundType::FullBuy { 1.0 } else { 0.0 },
+            round_type_forcebuy: if context.round_type == RoundType::ForceBuy { 1.0 } else { 0.0 },
+            round_type_antieco: if context.round_type == RoundType::AntiEco { 1.0 } else { 0.0 },
+            map_side: if player.team == Team::Attackers { 0.0 } else { 1.0 },
+            
+            // Role features (one-hot encoding)
+            is_duelist: if role == AgentRole::Duelist { 1.0 } else { 0.0 },
+            is_controller: if role == AgentRole::Controller { 1.0 } else { 0.0 },
+            is_initiator: if role == AgentRole::Initiator { 1.0 } else { 0.0 },
+            is_sentinel: if role == AgentRole::Sentinel { 1.0 } else { 0.0 },
+            
+            // Team coordination features (simplified for now)
+            team_rifles_needed: 0.5, // TODO: Calculate from team strategy
+            team_utility_budget: 0.5, // TODO: Calculate from team needs
+            coordination_priority: 0.5, // TODO: Calculate based on role and situation
+            team_strategy_eco: if context.round_type == RoundType::Eco { 1.0 } else { 0.0 },
+            team_strategy_force: if context.round_type == RoundType::ForceBuy { 1.0 } else { 0.0 },
+            team_strategy_full: if context.round_type == RoundType::FullBuy { 1.0 } else { 0.0 },
+        }
+    }
+
+    fn calculate_player_round_stats(&self, player_id: u32) -> PlayerRoundStats {
+        let player_events: Vec<&GameEvent> = self.events
+            .iter()
+            .filter(|event| {
+                match event {
+                    GameEvent::Kill { killer_id, victim_id, .. } => *killer_id == player_id || *victim_id == player_id,
+                    _ => false,
+                }
+            })
+            .collect();
+
+        let mut kills = 0u8;
+        let mut deaths = 0u8;
+        let mut total_damage = 0u32;
+        let mut damage_instances = 0u32;
+
+        for event in player_events {
+            match event {
+                GameEvent::Kill { killer_id, victim_id, .. } => {
+                    if *killer_id == player_id {
+                        kills += 1;
+                        total_damage += 140; // Approximate damage for a kill
+                        damage_instances += 1;
+                    }
+                    if *victim_id == player_id {
+                        deaths += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let survival_rate = if kills + deaths == 0 {
+            1.0
+        } else {
+            1.0 - (deaths as f32 / (kills + deaths) as f32)
+        };
+
+        let avg_damage = if damage_instances == 0 {
+            0.0
+        } else {
+            total_damage as f32 / damage_instances as f32
+        };
+
+        PlayerRoundStats {
+            kills,
+            deaths,
+            assists: 0, // TODO: Track assists
+            survival_rate,
+            avg_damage,
+        }
+    }
+
+    pub fn make_neural_buy_decision(&mut self, player_id: u32, context: &RoundContext) -> Result<BuyDecision, String> {
+        let player = self.players.get(&player_id).ok_or("Player not found")?;
+        
+        // Extract features
+        let features = self.extract_game_features(player, context);
+        
+        // Get prediction from neural network if available
+        if let Some(ref mut predictor) = self.players.get_mut(&player_id).unwrap().neural_predictor {
+            match predictor.predict(&features) {
+                Ok(prediction) => {
+                    // Convert neural network output to BuyDecision
+                    let mut best_weapon: Option<Weapon> = None;
+                    let mut max_confidence = 0.0f32;
+                    
+                    // Map weapon confidences to actual weapons (simplified mapping)
+                    let weapons = [
+                        Weapon::Classic, Weapon::Ghost, Weapon::Sheriff, Weapon::Spectre,
+                        Weapon::Bulldog, Weapon::Guardian, Weapon::Phantom, Weapon::Vandal,
+                        Weapon::Marshal, Weapon::Operator
+                    ];
+                    
+                    for (i, weapon) in weapons.iter().enumerate() {
+                        if i < prediction.weapon_confidences.len() {
+                            let confidence = prediction.weapon_confidences[i];
+                            if confidence > max_confidence && confidence > 0.5 {
+                                max_confidence = confidence;
+                                best_weapon = Some(weapon.clone());
+                            }
+                        }
+                    }
+                    
+                    // Determine armor based on neural network output
+                    let armor = if prediction.armor_priority > 0.7 {
+                        ArmorType::Heavy
+                    } else if prediction.armor_priority > 0.4 {
+                        ArmorType::Light
+                    } else {
+                        ArmorType::None
+                    };
+                    
+                    // Calculate abilities budget based on utility priority
+                    let abilities_budget = (prediction.utility_priority * 1200.0) as u32;
+                    
+                    // Calculate total cost
+                    let weapon_cost = if let Some(ref weapon) = best_weapon {
+                        self.weapon_stats.get(weapon).map(|stats| stats.price).unwrap_or(0)
+                    } else {
+                        0
+                    };
+                    
+                    let armor_cost = match armor {
+                        ArmorType::Heavy => 1000,
+                        ArmorType::Light => 400,
+                        ArmorType::None => 0,
+                    };
+                    
+                    let total_cost = weapon_cost + armor_cost + abilities_budget;
+                    
+                    Ok(BuyDecision {
+                        primary_weapon: best_weapon,
+                        secondary_weapon: Weapon::Classic, // Default
+                        armor,
+                        abilities_budget,
+                        total_cost,
+                        confidence: prediction.overall_confidence,
+                        coordination_priority: 0.5, // TODO: Extract from neural network
+                    })
+                }
+                Err(e) => Err(format!("Neural network prediction failed: {:?}", e))
+            }
+        } else {
+            // Fall back to traditional buy decision if neural network not available
+            let player = self.players.get(&player_id).unwrap();
+            Ok(self.make_dynamic_buy_decision(player, context))
+        }
+    }
+
+    fn create_neural_target_from_outcome(&self, buy_decision: &BuyDecision, outcome: &RoundPerformanceOutcome) -> BuyDecisionTarget {
+        // Create target based on the actual buy decision and its performance outcome
+        let weapons = [
+            Weapon::Classic, Weapon::Ghost, Weapon::Sheriff, Weapon::Spectre,
+            Weapon::Bulldog, Weapon::Guardian, Weapon::Phantom, Weapon::Vandal,
+            Weapon::Marshal, Weapon::Operator
+        ];
+        
+        let mut weapon_confidences = vec![0.0; 10];
+        
+        // If the round was successful, increase confidence for the chosen weapon
+        if let Some(ref chosen_weapon) = buy_decision.primary_weapon {
+            for (i, weapon) in weapons.iter().enumerate() {
+                if weapon == chosen_weapon {
+                    // Set confidence based on round performance
+                    weapon_confidences[i] = if outcome.round_impact_score > 0.7 {
+                        0.9 // Very successful
+                    } else if outcome.round_impact_score > 0.5 {
+                        0.7 // Successful
+                    } else if outcome.round_impact_score > 0.3 {
+                        0.5 // Neutral
+                    } else {
+                        0.2 // Poor performance
+                    };
+                    break;
+                }
+            }
+        }
+        
+        // Calculate eco/force buy targets based on outcome and cost efficiency
+        let _cost_efficiency = if buy_decision.total_cost > 0 {
+            outcome.round_impact_score * 1000.0 / buy_decision.total_cost as f32
+        } else {
+            outcome.round_impact_score
+        };
+        
+        let should_eco = if buy_decision.total_cost < 1000 && outcome.round_impact_score > 0.5 {
+            0.8 // Eco was effective
+        } else if buy_decision.total_cost > 4000 && outcome.round_impact_score < 0.3 {
+            0.7 // Expensive buy was ineffective, should have eco'd
+        } else {
+            0.3 // Neutral
+        };
+        
+        let should_force = if buy_decision.total_cost > 2000 && buy_decision.total_cost < 4000 && outcome.round_impact_score > 0.6 {
+            0.8 // Force buy was effective
+        } else {
+            0.3 // Neutral
+        };
+        
+        BuyDecisionTarget {
+            weapon_confidences,
+            should_eco,
+            should_force,
+            armor_priority: match buy_decision.armor {
+                ArmorType::Heavy => if outcome.deaths == 0 { 0.9 } else { 0.6 },
+                ArmorType::Light => if outcome.deaths == 0 { 0.7 } else { 0.4 },
+                ArmorType::None => if outcome.deaths == 0 { 0.3 } else { 0.1 },
+            },
+            utility_priority: (buy_decision.abilities_budget as f32 / 1200.0) * outcome.round_impact_score,
+            overall_confidence: outcome.round_impact_score,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PlayerRoundStats {
+    kills: u8,
+    deaths: u8,
+    assists: u8,
+    survival_rate: f32,
+    avg_damage: f32,
 }
