@@ -45,7 +45,7 @@ pub enum RankTier {
 }
 #[derive(Debug)]
 pub enum RankTierParseError {
-    InvalidRankName(String)
+    InvalidRankName(String),
 }
 
 impl FromStr for RankTier {
