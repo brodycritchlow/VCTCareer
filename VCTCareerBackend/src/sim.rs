@@ -42,10 +42,10 @@ pub enum AgentRole {
 impl Agent {
     pub fn get_role(&self) -> AgentRole {
         match self {
-            Agent::Jett | Agent::Raze | Agent::Phoenix | Agent::Yoru | Agent::Neon => AgentRole::Duelist,
+            Agent::Jett | Agent::Raze | Agent::Phoenix | Agent::Yoru | Agent::Neon | Agent::Iso => AgentRole::Duelist,
             Agent::Breach | Agent::Sova | Agent::Skye | Agent::Kayo | Agent::Fade | Agent::Gekko => AgentRole::Initiator,
             Agent::Omen | Agent::Brimstone | Agent::Viper | Agent::Astra | Agent::Harbor | Agent::Clove => AgentRole::Controller,
-            Agent::Sage | Agent::Cypher | Agent::Killjoy | Agent::Chamber | Agent::Deadlock | Agent::Iso => AgentRole::Sentinel,
+            Agent::Sage | Agent::Cypher | Agent::Killjoy | Agent::Chamber | Agent::Deadlock => AgentRole::Sentinel,
         }
     }
 }

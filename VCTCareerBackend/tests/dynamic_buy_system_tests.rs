@@ -39,6 +39,7 @@ fn test_agent_role_mapping() {
     assert_eq!(Agent::Phoenix.get_role(), AgentRole::Duelist);
     assert_eq!(Agent::Yoru.get_role(), AgentRole::Duelist);
     assert_eq!(Agent::Neon.get_role(), AgentRole::Duelist);
+    assert_eq!(Agent::Iso.get_role(), AgentRole::Duelist);
 
     // Test Initiator agents
     assert_eq!(Agent::Breach.get_role(), AgentRole::Initiator);
@@ -62,7 +63,6 @@ fn test_agent_role_mapping() {
     assert_eq!(Agent::Killjoy.get_role(), AgentRole::Sentinel);
     assert_eq!(Agent::Chamber.get_role(), AgentRole::Sentinel);
     assert_eq!(Agent::Deadlock.get_role(), AgentRole::Sentinel);
-    assert_eq!(Agent::Iso.get_role(), AgentRole::Sentinel);
 }
 
 #[test]
