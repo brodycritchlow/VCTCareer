@@ -616,11 +616,12 @@ async fn main() -> std::io::Result<()> {
     let mgr = Manager::new(config, NoTls);
     let pool = Pool::builder(mgr).max_size(16).build().unwrap();
     let simulation_manager = create_simulation_manager();
-    debug!("Starting server at http://127.0.0.1:8080");
+    println!("Starting server at http://127.0.0.1:8080");
     HttpServer::new(move || {
         let cors = Cors::permissive();
         App::new()
             .wrap(cors)
+            .service(index)
             .service(create_career)
             .service(get_teams)
             .service(generate_offers)
@@ -632,11 +633,9 @@ async fn main() -> std::io::Result<()> {
             .service(control_simulation)
             .service(get_simulation_events)
             .service(get_simulation_stats)
-            // Phase 2 endpoints
             .service(get_live_stats)
             .service(get_scoreboard)
             .service(get_economy_status)
-            // Phase 3 endpoints
             .service(create_checkpoint)
             .service(get_events_at_timestamp)
             .into_utoipa_app()
