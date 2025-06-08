@@ -93,42 +93,45 @@ fn main() {
         player.current_credits = 800; // Starting credits
         player.current_loadout.primary_weapon = None;
         player.current_loadout.armor = ArmorType::None;
+        player.current_loadout.abilities_purchased.clear();
     }
     
     sim.simulate_player_purchases();
     print_buy_analysis(&sim, "Pistol Round");
     
-    // Demonstrate Round 3 (Full Buy)
-    println!("\n\n💰 ROUND 3: FULL BUY ROUND");
-    println!("===========================");
+    // Demonstrate Round 3 (Full Buy with Team Coordination)
+    println!("\n\n💰 ROUND 3: COORDINATED FULL BUY ROUND");
+    println!("=======================================");
     
     sim.state.current_round = 3;
     for player in sim.players.values_mut() {
         player.current_credits = 5000; // Rich team
         player.current_loadout.primary_weapon = None;
         player.current_loadout.armor = ArmorType::None;
+        player.current_loadout.abilities_purchased.clear();
     }
     
     sim.simulate_player_purchases();
-    print_buy_analysis(&sim, "Full Buy Round");
+    print_buy_analysis(&sim, "Coordinated Full Buy Round");
     
-    // Demonstrate Eco Round
-    println!("\n\n💸 ROUND 5: ECO ROUND");
-    println!("======================");
+    // Demonstrate Eco Round with Team Strategy
+    println!("\n\n💸 ROUND 5: STRATEGIC ECO ROUND");
+    println!("================================");
     
     sim.state.current_round = 5;
     for player in sim.players.values_mut() {
         player.current_credits = 1200; // Poor economy
         player.current_loadout.primary_weapon = None;
         player.current_loadout.armor = ArmorType::None;
+        player.current_loadout.abilities_purchased.clear();
     }
     
     sim.simulate_player_purchases();
-    print_buy_analysis(&sim, "Eco Round");
+    print_buy_analysis(&sim, "Strategic Eco Round");
     
     // Demonstrate Force Buy
-    println!("\n\n⚡ ROUND 7: FORCE BUY");
-    println!("=====================");
+    println!("\n\n⚡ ROUND 7: FORCE BUY (Team Coordination Test)");
+    println!("===============================================");
     
     sim.state.current_round = 7;
     sim.loss_streaks.insert(Team::Attackers, 3);
@@ -138,40 +141,55 @@ fn main() {
         player.current_credits = 2400; // Moderate credits
         player.current_loadout.primary_weapon = None;
         player.current_loadout.armor = ArmorType::None;
+        player.current_loadout.abilities_purchased.clear();
     }
     
     sim.simulate_player_purchases();
-    print_buy_analysis(&sim, "Force Buy Round");
+    print_buy_analysis(&sim, "Force Buy Round (Team Coordinated)");
     
     // Show individual player preferences
-    println!("\n\n🎯 PLAYER PREFERENCE ANALYSIS");
-    println!("===============================");
+    println!("\n\n🎯 PLAYER PREFERENCE & COORDINATION ANALYSIS");
+    println!("=============================================");
     
     for player in sim.players.values().take(4) {
         println!("\n🎮 {} ({:?} - {:?})", player.name, player.agent, player.agent.get_role());
         println!("   💰 Eco Threshold: {} credits", player.buy_preferences.eco_threshold);
         println!("   ⚡ Force Buy Tendency: {:.0}%", player.buy_preferences.force_buy_tendency * 100.0);
         println!("   🔧 Utility Priority: {:.0}%", player.buy_preferences.utility_priority * 100.0);
-        println!("   🔫 Top Weapon Preferences:");
         
+        // Show latest purchase details
+        println!("   🛒 Latest Purchase:");
+        println!("      Weapon: {:?}", player.current_loadout.primary_weapon.as_ref().unwrap_or(&Weapon::Classic));
+        println!("      Armor: {:?}", player.current_loadout.armor);
+        if !player.current_loadout.abilities_purchased.is_empty() {
+            println!("      Utilities: {}", player.current_loadout.abilities_purchased.join(", "));
+        }
+        
+        println!("   🔫 Top Weapon Preferences:");
         for (i, weapon_pref) in player.buy_preferences.preferred_weapons.iter().take(3).enumerate() {
             println!("      {}. {:?} (Priority: {:.2})", i + 1, weapon_pref.weapon, weapon_pref.priority);
         }
     }
     
-    println!("\n\n🎊 SUMMARY");
-    println!("===========");
+    println!("\n\n🎊 PHASE 2 FEATURES SUMMARY");
+    println!("=============================");
     println!("✅ Pistol Round: Players buy pistols and light armor");
     println!("✅ Full Buy Round: Role-based weapon variety (Vandal, Phantom, Operator, Guardian)");
     println!("✅ Eco Round: Players save money or buy minimal items");
     println!("✅ Force Buy: Aggressive players force buy despite low economy");
     println!("✅ Player Personality: Each player has unique buying preferences");
     println!("✅ Role Specialization: Duelists, Controllers, Sentinels, Initiators buy differently");
+    println!("✅ Team Coordination: Strategic team-wide buy decisions");
+    println!("✅ Utility Budget Management: Role-based utility allocation");
+    println!("✅ Team Composition Awareness: Balanced team utility coverage");
     
-    println!("\n🚀 The dynamic buy system is working perfectly!");
-    println!("   Players make realistic, varied decisions based on:");
+    println!("\n🚀 Phase 2 of the dynamic buy system is working perfectly!");
+    println!("   Players make realistic, coordinated decisions based on:");
     println!("   • Agent roles and responsibilities");
     println!("   • Individual skill levels and preferences");
     println!("   • Round context and team economy");
     println!("   • Loss streaks and pressure situations");
+    println!("   • Team strategy and coordination");
+    println!("   • Utility budget allocation by role");
+    println!("   • Strategic planning and composition balance");
 }

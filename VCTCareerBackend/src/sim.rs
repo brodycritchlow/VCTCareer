@@ -147,8 +147,47 @@ pub struct BuyDecision {
     pub primary_weapon: Option<Weapon>,
     pub secondary_weapon: Weapon,
     pub armor: ArmorType,
+    pub abilities_budget: u32,
     pub total_cost: u32,
     pub confidence: f32,
+    pub coordination_priority: f32, // How important this player's buy is for team success
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct TeamBuyStrategy {
+    pub strategy_type: TeamStrategyType,
+    pub priority_roles: Vec<AgentRole>, // Which roles get priority in buying
+    pub utility_budget: u32,
+    pub minimum_rifles: u8,
+    pub allow_eco_frags: bool, // Allow some players to buy while others save
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub enum TeamStrategyType {
+    FullSave,    // Everyone saves for next round
+    EcoFrag,     // Some players buy minimal weapons to get frags
+    HalfBuy,     // Buy weapons but minimal utility/armor
+    FullBuy,     // Everyone buys optimal loadouts
+    ForceBuy,    // Buy everything despite poor economy
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct UtilityBudget {
+    pub smokes_budget: u32,
+    pub flashes_budget: u32,
+    pub info_budget: u32,
+    pub healing_budget: u32,
+    pub total_utility_spend: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct TeamComposition {
+    pub has_smoker: bool,
+    pub has_igl: bool, // In-game leader (typically Controller/Sentinel)
+    pub has_entry_fragger: bool,
+    pub has_support: bool,
+    pub rifle_players: u8,
+    pub operator_players: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -1386,6 +1425,8 @@ impl ValorantSimulation {
         let mut best_armor = ArmorType::None;
         let mut remaining_credits = player.current_credits;
         let mut confidence = 0.5;
+        let mut abilities_budget = 0u32;
+        let mut coordination_priority: f32 = 0.5;
 
         // Check if player should eco based on their preferences and context
         let should_eco = remaining_credits < player.buy_preferences.eco_threshold
@@ -1399,17 +1440,38 @@ impl ValorantSimulation {
                     primary_weapon: None,
                     secondary_weapon: Weapon::Sheriff,
                     armor: ArmorType::None,
+                    abilities_budget: 0,
                     total_cost: 800,
                     confidence: 0.8,
+                    coordination_priority: 0.3,
                 };
             }
             return BuyDecision {
                 primary_weapon: None,
                 secondary_weapon: Weapon::Classic,
                 armor: ArmorType::None,
+                abilities_budget: 0,
                 total_cost: 0,
                 confidence: 0.9,
+                coordination_priority: 0.2,
             };
+        }
+
+        // Calculate coordination priority based on role and team economy
+        let role = player.agent.get_role();
+        coordination_priority = match role {
+            AgentRole::Controller => 0.9,  // High priority for smokers
+            AgentRole::Initiator => 0.8,   // High priority for info gatherers
+            AgentRole::Duelist => 0.6,     // Medium priority for entry fraggers
+            AgentRole::Sentinel => 0.7,    // Medium-high priority for site anchors
+        };
+
+        // Adjust coordination priority based on context
+        if context.round_type == RoundType::ForceBuy {
+            coordination_priority *= 1.2; // Increase importance in force buy situations
+        }
+        if context.loss_streak >= 3 {
+            coordination_priority *= 1.1; // Slightly more important when desperate
         }
 
         // Sort weapons by priority considering situational modifiers
@@ -1423,6 +1485,18 @@ impl ValorantSimulation {
                 .unwrap_or(&0.0);
             priority_b.partial_cmp(&priority_a).unwrap_or(std::cmp::Ordering::Equal)
         });
+
+        // Calculate utility budget based on role and preferences
+        let base_utility_budget = (remaining_credits as f32 * player.buy_preferences.utility_priority * 0.3) as u32;
+        abilities_budget = match role {
+            AgentRole::Controller => base_utility_budget.max(800).min(1500), // Controllers need smokes
+            AgentRole::Initiator => base_utility_budget.max(600).min(1200),  // Initiators need info abilities
+            AgentRole::Sentinel => base_utility_budget.max(400).min(800),    // Sentinels need setup abilities
+            AgentRole::Duelist => base_utility_budget.min(400),              // Duelists focus on fragging
+        };
+
+        // Reserve utility budget
+        remaining_credits = remaining_credits.saturating_sub(abilities_budget);
 
         // Try to buy the highest priority weapon that fits budget
         for weapon_pref in &sorted_weapons {
@@ -1475,29 +1549,249 @@ impl ValorantSimulation {
             primary_weapon: best_weapon,
             secondary_weapon,
             armor: best_armor,
+            abilities_budget,
             total_cost,
             confidence: confidence.clamp(0.1, 1.0),
+            coordination_priority: coordination_priority.clamp(0.1, 1.0),
         }
     }
 
+
+    pub fn create_team_buy_strategy(&self, team: &Team, context: &RoundContext) -> TeamBuyStrategy {
+        let team_players: Vec<&Player> = self.players.values()
+            .filter(|p| p.team == *team)
+            .collect();
+
+        let team_credits: u32 = team_players.iter().map(|p| p.current_credits).sum();
+        let _avg_credits = if !team_players.is_empty() { 
+            team_credits / team_players.len() as u32 
+        } else { 
+            0 
+        };
+
+        // Determine strategy type based on economy and context
+        let strategy_type = match context.round_type {
+            RoundType::Pistol => TeamStrategyType::HalfBuy,
+            RoundType::Eco => {
+                if context.loss_streak >= 3 {
+                    TeamStrategyType::EcoFrag // Desperate eco with some buys
+                } else {
+                    TeamStrategyType::FullSave
+                }
+            },
+            RoundType::ForceBuy => TeamStrategyType::ForceBuy,
+            RoundType::FullBuy => TeamStrategyType::FullBuy,
+            RoundType::AntiEco => TeamStrategyType::FullBuy,
+        };
+
+        // Determine priority roles based on strategy
+        let priority_roles = match strategy_type {
+            TeamStrategyType::FullSave => vec![], // No priorities when saving
+            TeamStrategyType::EcoFrag => vec![AgentRole::Duelist], // Entry fraggers get priority
+            TeamStrategyType::HalfBuy => vec![AgentRole::Controller, AgentRole::Initiator], // Utility roles first
+            TeamStrategyType::FullBuy => vec![AgentRole::Controller, AgentRole::Initiator, AgentRole::Duelist, AgentRole::Sentinel],
+            TeamStrategyType::ForceBuy => vec![AgentRole::Controller, AgentRole::Duelist], // Essential roles only
+        };
+
+        // Calculate utility budget based on team economy and strategy
+        let utility_budget = match strategy_type {
+            TeamStrategyType::FullSave => 0,
+            TeamStrategyType::EcoFrag => (team_credits as f32 * 0.1) as u32,
+            TeamStrategyType::HalfBuy => (team_credits as f32 * 0.15) as u32,
+            TeamStrategyType::FullBuy => (team_credits as f32 * 0.25) as u32,
+            TeamStrategyType::ForceBuy => (team_credits as f32 * 0.2) as u32,
+        };
+
+        // Determine minimum rifles needed
+        let minimum_rifles = match strategy_type {
+            TeamStrategyType::FullSave => 0,
+            TeamStrategyType::EcoFrag => 0,
+            TeamStrategyType::HalfBuy => 1,
+            TeamStrategyType::FullBuy => 4,
+            TeamStrategyType::ForceBuy => 2,
+        };
+
+        let allow_eco_frags = matches!(strategy_type, TeamStrategyType::EcoFrag | TeamStrategyType::ForceBuy);
+        
+        TeamBuyStrategy {
+            strategy_type,
+            priority_roles,
+            utility_budget,
+            minimum_rifles,
+            allow_eco_frags,
+        }
+    }
+
+    pub fn create_utility_budget(&self, team_strategy: &TeamBuyStrategy, team: &Team) -> UtilityBudget {
+        let total_budget = team_strategy.utility_budget;
+        
+        // Count players by role
+        let controllers = self.players.values()
+            .filter(|p| p.team == *team && p.agent.get_role() == AgentRole::Controller)
+            .count() as u32;
+        let initiators = self.players.values()
+            .filter(|p| p.team == *team && p.agent.get_role() == AgentRole::Initiator)
+            .count() as u32;
+        let sentinels = self.players.values()
+            .filter(|p| p.team == *team && p.agent.get_role() == AgentRole::Sentinel)
+            .count() as u32;
+
+        // Allocate budget based on role priorities
+        let smokes_budget = if controllers > 0 {
+            (total_budget as f32 * 0.4) as u32 // Controllers get 40% for smokes
+        } else {
+            0
+        };
+
+        let flashes_budget = if initiators > 0 {
+            (total_budget as f32 * 0.3) as u32 // Initiators get 30% for flashes/darts
+        } else {
+            0
+        };
+
+        let info_budget = if initiators > 0 {
+            (total_budget as f32 * 0.2) as u32 // Initiators get 20% for info gathering
+        } else {
+            0
+        };
+
+        let healing_budget = if sentinels > 0 {
+            (total_budget as f32 * 0.1) as u32 // Sentinels get 10% for healing/support
+        } else {
+            0
+        };
+
+        UtilityBudget {
+            smokes_budget,
+            flashes_budget,
+            info_budget,
+            healing_budget,
+            total_utility_spend: smokes_budget + flashes_budget + info_budget + healing_budget,
+        }
+    }
+
+    pub fn create_team_composition(&self, team: &Team) -> TeamComposition {
+        let team_players: Vec<&Player> = self.players.values()
+            .filter(|p| p.team == *team)
+            .collect();
+
+        let has_smoker = team_players.iter()
+            .any(|p| matches!(p.agent, Agent::Omen | Agent::Brimstone | Agent::Viper | Agent::Astra | Agent::Harbor | Agent::Clove));
+        
+        let has_igl = team_players.iter()
+            .any(|p| matches!(p.agent.get_role(), AgentRole::Controller | AgentRole::Sentinel));
+        
+        let has_entry_fragger = team_players.iter()
+            .any(|p| p.agent.get_role() == AgentRole::Duelist);
+        
+        let has_support = team_players.iter()
+            .any(|p| matches!(p.agent.get_role(), AgentRole::Initiator | AgentRole::Sentinel));
+
+        // Count potential rifle and operator players based on current weapons
+        let rifle_players = team_players.iter()
+            .filter(|p| matches!(p.current_loadout.primary_weapon, 
+                Some(Weapon::Vandal) | Some(Weapon::Phantom) | Some(Weapon::Bulldog) | Some(Weapon::Guardian)))
+            .count() as u8;
+
+        let operator_players = team_players.iter()
+            .filter(|p| matches!(p.current_loadout.primary_weapon, Some(Weapon::Operator)))
+            .count() as u8;
+
+        TeamComposition {
+            has_smoker,
+            has_igl,
+            has_entry_fragger,
+            has_support,
+            rifle_players,
+            operator_players,
+        }
+    }
+
+    pub fn make_coordinated_buy_decision(&self, player: &Player, context: &RoundContext, team_strategy: &TeamBuyStrategy, utility_budget: &UtilityBudget) -> BuyDecision {
+        let mut individual_decision = self.make_dynamic_buy_decision(player, context);
+        
+        let role = player.agent.get_role();
+        let is_priority_role = team_strategy.priority_roles.contains(&role);
+        
+        // Adjust decision based on team coordination
+        if !is_priority_role && team_strategy.strategy_type == TeamStrategyType::EcoFrag {
+            // Non-priority players should save more aggressively in eco-frag rounds
+            if individual_decision.total_cost > 1000 {
+                return BuyDecision {
+                    primary_weapon: None,
+                    secondary_weapon: Weapon::Classic,
+                    armor: ArmorType::None,
+                    abilities_budget: 0,
+                    total_cost: 0,
+                    confidence: 0.8,
+                    coordination_priority: 0.2,
+                };
+            }
+        }
+
+        // Adjust utility budget based on team allocation
+        match role {
+            AgentRole::Controller => {
+                individual_decision.abilities_budget = (utility_budget.smokes_budget as f32 * 0.8) as u32;
+            },
+            AgentRole::Initiator => {
+                individual_decision.abilities_budget = ((utility_budget.flashes_budget + utility_budget.info_budget) as f32 * 0.6) as u32;
+            },
+            AgentRole::Sentinel => {
+                individual_decision.abilities_budget = (utility_budget.healing_budget as f32 * 0.5) as u32;
+            },
+            AgentRole::Duelist => {
+                // Duelists get minimal utility budget
+                individual_decision.abilities_budget = individual_decision.abilities_budget.min(200);
+            },
+        }
+
+        // Ensure minimum rifles are met
+        if team_strategy.minimum_rifles > 0 && individual_decision.primary_weapon.is_none() {
+            if is_priority_role && player.current_credits >= 2900 {
+                // Force buy rifle for priority players if team needs minimum rifles
+                individual_decision.primary_weapon = Some(Weapon::Vandal);
+                individual_decision.total_cost = individual_decision.total_cost.max(2900);
+            }
+        }
+
+        // Recalculate total cost including utility
+        individual_decision.total_cost = individual_decision.total_cost.saturating_add(individual_decision.abilities_budget);
+        
+        // Ensure player can afford the decision
+        if individual_decision.total_cost > player.current_credits {
+            let overspend = individual_decision.total_cost - player.current_credits;
+            individual_decision.abilities_budget = individual_decision.abilities_budget.saturating_sub(overspend);
+            individual_decision.total_cost = player.current_credits;
+        }
+
+        individual_decision
+    }
 
     pub fn simulate_player_purchases(&mut self) {
         // Create round contexts for both teams
         let attacker_context = self.create_round_context(&Team::Attackers);
         let defender_context = self.create_round_context(&Team::Defenders);
 
+        // Create team strategies
+        let attacker_strategy = self.create_team_buy_strategy(&Team::Attackers, &attacker_context);
+        let defender_strategy = self.create_team_buy_strategy(&Team::Defenders, &defender_context);
+
+        // Create utility budgets
+        let attacker_utility = self.create_utility_budget(&attacker_strategy, &Team::Attackers);
+        let defender_utility = self.create_utility_budget(&defender_strategy, &Team::Defenders);
+
         // Collect all buy decisions first to avoid borrowing conflicts
         let mut buy_decisions: HashMap<u32, BuyDecision> = HashMap::new();
         
         for player in self.players.values() {
-            // Reset loadout if they died (don't carry over equipment)
-            let context = if player.team == Team::Attackers { 
-                &attacker_context 
+            let (context, strategy, utility) = if player.team == Team::Attackers { 
+                (&attacker_context, &attacker_strategy, &attacker_utility)
             } else { 
-                &defender_context 
+                (&defender_context, &defender_strategy, &defender_utility)
             };
             
-            let decision = self.make_dynamic_buy_decision(player, context);
+            let decision = self.make_coordinated_buy_decision(player, context, strategy, utility);
             buy_decisions.insert(player.id, decision);
         }
 
@@ -1518,6 +1812,34 @@ impl ValorantSimulation {
                 player.current_loadout.primary_weapon = decision.primary_weapon.clone();
                 player.current_loadout.secondary_weapon = decision.secondary_weapon.clone();
                 player.current_loadout.armor = decision.armor.clone();
+                
+                // Add utility purchases based on abilities budget
+                if decision.abilities_budget > 0 {
+                    let role = player.agent.get_role();
+                    match role {
+                        AgentRole::Controller => {
+                            player.current_loadout.abilities_purchased.push("Smoke".to_string());
+                            if decision.abilities_budget >= 600 {
+                                player.current_loadout.abilities_purchased.push("Extra Smoke".to_string());
+                            }
+                        },
+                        AgentRole::Initiator => {
+                            player.current_loadout.abilities_purchased.push("Flash".to_string());
+                            if decision.abilities_budget >= 500 {
+                                player.current_loadout.abilities_purchased.push("Info Dart".to_string());
+                            }
+                        },
+                        AgentRole::Sentinel => {
+                            player.current_loadout.abilities_purchased.push("Utility".to_string());
+                        },
+                        AgentRole::Duelist => {
+                            if decision.abilities_budget >= 200 {
+                                player.current_loadout.abilities_purchased.push("Mobility".to_string());
+                            }
+                        },
+                    }
+                }
+                
                 player.current_credits = player.current_credits.saturating_sub(decision.total_cost);
             }
         }
