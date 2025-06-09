@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+<<<<<<< HEAD
 // Candle ML imports
 use candle_core::{Device, Result as CandleResult, Tensor, DType};
 use candle_nn::{Module, VarBuilder, VarMap, linear, Linear, ops};
@@ -17,6 +18,8 @@ struct PlayerRoundStats {
     avg_damage: f32,
 }
 
+=======
+>>>>>>> origin/main
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub enum Agent {
     Jett,
@@ -45,6 +48,7 @@ pub enum Agent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+<<<<<<< HEAD
 pub enum AgentRole {
     Duelist,
     Initiator,
@@ -64,6 +68,8 @@ impl Agent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+=======
+>>>>>>> origin/main
 pub enum Weapon {
     Classic,
     Shorty,
@@ -98,7 +104,11 @@ pub enum BodyPart {
     Legs,
 }
 
+<<<<<<< HEAD
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+=======
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+>>>>>>> origin/main
 pub enum ArmorType {
     None,
     Light, // 25 armor, costs 400
@@ -112,6 +122,7 @@ pub enum Penetration {
     High,
 }
 
+<<<<<<< HEAD
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, ToSchema)]
 pub enum RoundType {
     Pistol,
@@ -301,6 +312,8 @@ pub struct MetaTrend {
     pub impact_on_success: f32, // Measured impact on win rate
 }
 
+=======
+>>>>>>> origin/main
 #[derive(Debug, Clone)]
 pub struct WeaponStats {
     pub price: u32,
@@ -329,6 +342,7 @@ pub struct PlayerSkills {
     pub util: f32,
 }
 
+<<<<<<< HEAD
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PlayerLearningInsights {
     pub player_id: u32,
@@ -704,6 +718,9 @@ impl NeuralBuyPredictor {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+=======
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+>>>>>>> origin/main
 pub struct Player {
     pub id: u32,
     pub name: String,
@@ -716,6 +733,7 @@ pub struct Player {
     pub ultimate_points: u32,
     pub current_loadout: PlayerLoadout,
 
+<<<<<<< HEAD
     pub skills: PlayerSkills,
     pub buy_preferences: BuyPreferences,
     // Phase 3: ML Integration
@@ -723,12 +741,18 @@ pub struct Player {
     // Phase 3.5: Neural Network Integration
     #[serde(skip)] // Don't serialize the neural network
     pub neural_predictor: Option<NeuralBuyPredictor>,
+=======
+    skills: PlayerSkills,
+>>>>>>> origin/main
 }
 
 impl Player {
     pub fn new(id: u32, name: String, agent: Agent, team: Team, skills: PlayerSkills) -> Self {
+<<<<<<< HEAD
         let buy_preferences = Self::generate_buy_preferences_for_agent(&agent, &skills);
         
+=======
+>>>>>>> origin/main
         Player {
             id,
             name,
@@ -746,6 +770,7 @@ impl Player {
                 abilities_purchased: Vec::new(),
             },
             skills,
+<<<<<<< HEAD
             buy_preferences,
             learning_profile: None, // Initialize without ML profile, will be created when ML is enabled
             neural_predictor: None, // Initialize without neural network, will be created when enabled
@@ -886,6 +911,8 @@ impl Player {
             },
             armor_priority: 0.8, // Generally high armor priority for all roles
             role_weapon_preferences: HashMap::new(), // Will be populated later if needed
+=======
+>>>>>>> origin/main
         }
     }
 
@@ -922,6 +949,7 @@ impl Player {
     pub fn survived_round(&self) -> bool {
         self.is_alive
     }
+<<<<<<< HEAD
 
     // Phase 3: Machine Learning Methods
 
@@ -1177,6 +1205,8 @@ impl Player {
             *playstyle_pattern = PlaystylePattern::Adaptive;
         }
     }
+=======
+>>>>>>> origin/main
 }
 
 pub type Timestamp = u64;
@@ -1374,7 +1404,11 @@ pub struct ValorantSimulation {
     pub round_start_timestamp: Timestamp,
 }
 
+<<<<<<< HEAD
 #[derive(Clone, Serialize, Deserialize)]
+=======
+#[derive(Debug, Clone, Serialize, Deserialize)]
+>>>>>>> origin/main
 pub struct SimulationCheckpoint {
     pub state: SimulationState,
     pub players: HashMap<u32, Player>,
@@ -1486,6 +1520,7 @@ impl ValorantSimulation {
             },
         );
 
+<<<<<<< HEAD
         weapon_stats.insert(
             Weapon::Guardian,
             WeaponStats {
@@ -1514,6 +1549,8 @@ impl ValorantSimulation {
             },
         );
 
+=======
+>>>>>>> origin/main
         let simulation_id = Uuid::new_v4();
 
         ValorantSimulation {
@@ -2093,6 +2130,7 @@ impl ValorantSimulation {
             .collect()
     }
 
+<<<<<<< HEAD
     pub fn determine_round_type(&self, team: &Team) -> RoundType {
         let team_credits: u32 = self.players
             .values()
@@ -3648,6 +3686,60 @@ impl ValorantSimulation {
         Some(insights)
     }
 
+=======
+    fn calculate_loadout_cost(&self, weapon: &Weapon, armor: &ArmorType) -> u32 {
+        let weapon_cost = self.weapon_stats[weapon].price;
+        let armor_cost = match armor {
+            ArmorType::Heavy => 1000,
+            ArmorType::Light => 400,
+            ArmorType::None => 0,
+        };
+        weapon_cost + armor_cost
+    }
+
+    fn simulate_player_purchases(&mut self) {
+        // Pre-calculate all costs to avoid borrowing conflicts
+        let operator_heavy_cost = self.calculate_loadout_cost(&Weapon::Operator, &ArmorType::Heavy);
+        let vandal_heavy_cost = self.calculate_loadout_cost(&Weapon::Vandal, &ArmorType::Heavy);
+        let spectre_cost = self.calculate_loadout_cost(&Weapon::Spectre, &ArmorType::None);
+        let spectre_light_cost = self.calculate_loadout_cost(&Weapon::Spectre, &ArmorType::Light);
+        let sheriff_cost = self.calculate_loadout_cost(&Weapon::Sheriff, &ArmorType::None);
+
+        for player in self.players.values_mut() {
+            // Reset loadout if they died (don't carry over equipment)
+            if !player.survived_round() {
+                player.current_loadout = PlayerLoadout {
+                    primary_weapon: None,
+                    secondary_weapon: Weapon::Classic,
+                    armor: ArmorType::None,
+                    abilities_purchased: Vec::new(),
+                };
+            }
+
+            // Dynamic buying strategy with pre-calculated costs
+            if player.current_credits >= operator_heavy_cost {
+                player.current_loadout.primary_weapon = Some(Weapon::Operator);
+                player.current_loadout.armor = ArmorType::Heavy;
+                player.current_credits -= operator_heavy_cost;
+            } else if player.current_credits >= vandal_heavy_cost {
+                player.current_loadout.primary_weapon = Some(Weapon::Vandal);
+                player.current_loadout.armor = ArmorType::Heavy;
+                player.current_credits -= vandal_heavy_cost;
+            } else if player.current_credits >= spectre_light_cost {
+                player.current_loadout.primary_weapon = Some(Weapon::Spectre);
+                player.current_loadout.armor = ArmorType::Light;
+                player.current_credits -= spectre_light_cost;
+            } else if player.current_credits >= spectre_cost {
+                player.current_loadout.primary_weapon = Some(Weapon::Spectre);
+                player.current_credits -= spectre_cost;
+            } else if player.current_credits >= sheriff_cost {
+                player.current_loadout.secondary_weapon = Weapon::Sheriff;
+                player.current_credits -= sheriff_cost;
+            }
+        }
+    }
+
+>>>>>>> origin/main
     fn simulate_combat(&mut self, alive_attackers: &[u32], alive_defenders: &[u32]) {
         // Safety check: ensure both teams have alive players
         if alive_attackers.is_empty() || alive_defenders.is_empty() {

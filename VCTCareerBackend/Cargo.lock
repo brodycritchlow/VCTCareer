@@ -397,6 +397,7 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "candle-core"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -453,6 +454,8 @@ dependencies = [
 ]
 
 [[package]]
+=======
+>>>>>>> origin/main
 name = "cassowary"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -528,6 +531,7 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "crossbeam-deque"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -553,12 +557,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
+=======
+>>>>>>> origin/main
 name = "crossterm"
 version = "0.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "829d955a0bb380ef178a640b91779e3987da38c9aea133b20614cfed8cdea9c6"
 dependencies = [
+<<<<<<< HEAD
  "bitflags 2.9.1",
+=======
+ "bitflags",
+>>>>>>> origin/main
  "crossterm_winapi",
  "mio",
  "parking_lot",
@@ -578,12 +588,15 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "crunchy"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43da5946c66ffcc7745f48db692ffbb10a83bfe0afd96235c5c2a4fb23994929"
 
 [[package]]
+=======
+>>>>>>> origin/main
 name = "crypto-common"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -732,6 +745,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 
 [[package]]
+<<<<<<< HEAD
 name = "dyn-stack"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -751,6 +765,8 @@ dependencies = [
 ]
 
 [[package]]
+=======
+>>>>>>> origin/main
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1940,6 +1956,7 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "rand_distr"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1950,12 +1967,18 @@ dependencies = [
 ]
 
 [[package]]
+=======
+>>>>>>> origin/main
 name = "ratatui"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eabd94c2f37801c20583fc49dd5cd6b0ba68c716787c2dd6ed18571e1e63117b"
 dependencies = [
+<<<<<<< HEAD
  "bitflags 2.9.1",
+=======
+ "bitflags",
+>>>>>>> origin/main
  "cassowary",
  "compact_str",
  "crossterm",
@@ -1971,6 +1994,7 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "raw-cpuid"
 version = "10.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2015,6 +2039,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03251193000f4bd3b042892be858ee50e8b3719f2b08e5833ac4353724632430"
 
 [[package]]
+=======
+>>>>>>> origin/main
 name = "redox_syscall"
 version = "0.5.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2104,7 +2130,11 @@ version = "0.38.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fdb5bc1ae2baa591800df16c9ca78619bf65c0488b41b96ccec5d11220d8c154"
 dependencies = [
+<<<<<<< HEAD
  "bitflags 2.9.1",
+=======
+ "bitflags",
+>>>>>>> origin/main
  "errno",
  "libc",
  "linux-raw-sys",
@@ -2775,6 +2805,39 @@ dependencies = [
  "candle-core",
  "candle-nn",
  "candle-transformers",
+ "crossterm",
+ "deadpool-postgres",
+ "dotenv",
+ "log",
+ "rand",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "tokio-postgres",
+ "utoipa",
+ "utoipa-actix-web",
+ "utoipa-swagger-ui",
+ "uuid",
+]
+
+[[package]]
+name = "uuid"
+version = "1.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3cf4199d1e5d15ddd86a694e4d0dffa9c323ce759fea589f00fef9d81cc1931d"
+dependencies = [
+ "getrandom 0.3.3",
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "vctcareer_backend"
+version = "0.1.0"
+dependencies = [
+ "actix-cors",
+ "actix-web",
  "crossterm",
  "deadpool-postgres",
  "dotenv",

@@ -7,6 +7,7 @@ pub mod simulation_manager;
 
 // Re-export enums from simulation_manager for external use
 pub use simulation_manager::{AdvanceMode, SimulationCommand};
+<<<<<<< HEAD
 
 // Re-export core simulation types for examples
 pub use sim::{
@@ -14,3 +15,5 @@ pub use sim::{
     RoundType, RoundContext, EconomyState, RoundEndReason, Weapon, ArmorType,
     BuyDecision, GameStateFeatures, NeuralBuyPredictor, PlayerLearningInsights
 };
+=======
+>>>>>>> origin/main
