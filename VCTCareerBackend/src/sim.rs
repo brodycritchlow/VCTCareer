@@ -102,10 +102,10 @@ pub struct PlayerLoadout {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlayerSkills {
-    pub aim: f32,
-    pub hs: f32,
-    pub movement: f32,
-    pub util: f32,
+    pub aim: u32,    // 1-100 scale
+    pub hs: u32,     // 1-100 scale
+    pub movement: u32, // 1-100 scale
+    pub util: u32,   // 1-100 scale
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -374,6 +374,8 @@ pub struct ValorantSimulation {
     pub spike_planted: bool,
     pub spike_defused: bool,
     pub round_start_timestamp: Timestamp,
+    pub combat_tick_counter: u32,
+    pub spike_defuse_start_time: Option<Timestamp>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -513,6 +515,8 @@ impl ValorantSimulation {
             spike_planted: false,
             spike_defused: false,
             round_start_timestamp: 0,
+            combat_tick_counter: 0,
+            spike_defuse_start_time: None,
         }
     }
 
@@ -820,6 +824,8 @@ impl ValorantSimulation {
             self.round_start_timestamp = self.state.current_timestamp;
             self.round_timer_ms = 100_000;
             self.spike_timer_ms = 45_000;
+            self.combat_tick_counter = 0;  // Reset combat counter for new round
+            self.spike_defuse_start_time = None;
 
             self.record_event(GameEvent::RoundStart {
                 timestamp: self.state.current_timestamp,
@@ -846,6 +852,7 @@ impl ValorantSimulation {
         _spike_planted: bool,
     ) -> Result<(), String> {
         self.round_timer_ms = self.round_timer_ms.saturating_sub(500);
+        self.combat_tick_counter += 1;
 
         let alive_attackers: Vec<u32> = self
             .get_alive_players_on_team(&Team::Attackers)
@@ -886,10 +893,22 @@ impl ValorantSimulation {
 
         // Spike mechanics
         if !self.spike_planted {
-            // 15% chance per tick after 30 seconds to plant spike
-            if self.state.current_timestamp - self.round_start_timestamp > 30_000 {
+            // Time-based spike plant logic with urgency
+            let elapsed_time = self.state.current_timestamp - self.round_start_timestamp;
+            if elapsed_time > 30_000 {  // Can plant after 30 seconds
+                let time_remaining = self.round_timer_ms;
                 let mut rng = rand::rng();
-                if rng.random::<f32>() < 0.15 {
+                
+                // Calculate plant urgency based on remaining time
+                let plant_urgency = if time_remaining < 15_000 {
+                    0.75  // Very high urgency in final 15 seconds
+                } else if time_remaining < 30_000 {
+                    0.45  // High urgency in final 30 seconds
+                } else {
+                    0.25  // Normal urgency
+                };
+                
+                if rng.random::<f32>() < plant_urgency {
                     let planter_id = alive_attackers[rng.random_range(0..alive_attackers.len())];
                     self.record_event(GameEvent::SpikePlant {
                         timestamp: self.state.current_timestamp,
@@ -897,6 +916,7 @@ impl ValorantSimulation {
                     });
                     self.award_spike_plant_bonus(planter_id);
                     self.spike_planted = true;
+                    self.spike_defuse_start_time = None; // Reset defuse timer
                     self.state.phase = SimulationPhase::RoundActive {
                         round_number,
                         spike_planted: true,
@@ -914,26 +934,35 @@ impl ValorantSimulation {
                 return Ok(());
             }
 
-            // 5% chance per tick for defuse attempt
-            let mut rng = rand::rng();
-            if !alive_defenders.is_empty() && rng.random::<f32>() < 0.05 {
-                let defuser_id = alive_defenders[rng.random_range(0..alive_defenders.len())];
-                self.record_event(GameEvent::SpikeDefuse {
-                    timestamp: self.state.current_timestamp,
-                    defuser_id,
-                    successful: true,
-                });
-                if let Some(defuser) = self.players.get_mut(&defuser_id) {
-                    defuser.ultimate_points += 1;
+            // Improved defuse logic with minimum defuse time
+            if !alive_defenders.is_empty() {
+                let mut rng = rand::rng();
+                
+                // Check if defuse is already in progress
+                if let Some(defuse_start) = self.spike_defuse_start_time {
+                    let defuse_elapsed = self.state.current_timestamp - defuse_start;
+                    if defuse_elapsed >= 3_000 {  // 3 second minimum defuse time
+                        let defuser_id = alive_defenders[rng.random_range(0..alive_defenders.len())];
+                        self.record_event(GameEvent::SpikeDefuse {
+                            timestamp: self.state.current_timestamp,
+                            defuser_id,
+                            successful: true,
+                        });
+                        if let Some(defuser) = self.players.get_mut(&defuser_id) {
+                            defuser.ultimate_points += 1;
+                        }
+                        self.spike_defused = true;
+                        self.end_round(round_number, Team::Defenders, RoundEndReason::SpikeDefused);
+                        return Ok(());
+                    }
+                } else if rng.random::<f32>() < 0.20 {  // 20% chance to start defuse
+                    self.spike_defuse_start_time = Some(self.state.current_timestamp);
                 }
-                self.spike_defused = true;
-                self.end_round(round_number, Team::Defenders, RoundEndReason::SpikeDefused);
-                return Ok(());
             }
         }
 
-        // Combat simulation
-        if !alive_attackers.is_empty() && !alive_defenders.is_empty() {
+        // Reduced combat frequency - only simulate combat every 3 ticks (1.5 seconds)
+        if !alive_attackers.is_empty() && !alive_defenders.is_empty() && self.combat_tick_counter % 3 == 0 {
             self.simulate_combat(&alive_attackers, &alive_defenders);
         }
 
@@ -1165,11 +1194,11 @@ impl ValorantSimulation {
         let attacker_weapon_effectiveness = self.calculate_weapon_effectiveness(&attacker_weapon);
         let defender_weapon_effectiveness = self.calculate_weapon_effectiveness(&defender_weapon);
 
-        // Enhanced combat calculation with weapon stats
+        // Enhanced combat calculation with weapon stats (convert 1-100 to 0.0-1.0)
         let attacker_base_skill =
-            attacker_player_data.skills.aim * 0.7 + attacker_player_data.skills.hs * 0.3;
+            (attacker_player_data.skills.aim as f32 / 100.0) * 0.7 + (attacker_player_data.skills.hs as f32 / 100.0) * 0.3;
         let defender_base_skill =
-            defender_player_data.skills.aim * 0.7 + defender_player_data.skills.hs * 0.3;
+            (defender_player_data.skills.aim as f32 / 100.0) * 0.7 + (defender_player_data.skills.hs as f32 / 100.0) * 0.3;
 
         let attacker_effective_skill = attacker_base_skill * attacker_weapon_effectiveness;
         let defender_effective_skill = defender_base_skill * defender_weapon_effectiveness;
@@ -1185,9 +1214,9 @@ impl ValorantSimulation {
         attacker_win_chance *= fire_rate_advantage;
         attacker_win_chance = attacker_win_chance.clamp(0.1f32, 0.9f32);
 
-        // Determine hit location and headshot
-        let is_attacker_headshot = rng.random::<f32>() < attacker_player_data.skills.hs;
-        let is_defender_headshot = rng.random::<f32>() < defender_player_data.skills.hs;
+        // Determine hit location and headshot (convert 1-100 to 0.0-1.0)
+        let is_attacker_headshot = rng.random::<f32>() < (attacker_player_data.skills.hs as f32 / 100.0);
+        let is_defender_headshot = rng.random::<f32>() < (defender_player_data.skills.hs as f32 / 100.0);
 
         let hit_body_part = if is_attacker_headshot || is_defender_headshot {
             BodyPart::Head
