@@ -1,0 +1,71 @@
+# Pre-commit hooks for VCTCareer project
+repos:
+  # GitHub Actions validation
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.6.26
+    hooks:
+      - id: actionlint
+        name: Validate GitHub Actions workflows
+        description: Check GitHub Actions workflow files for errors
+        entry: actionlint
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
+        
+  # YAML validation
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-yaml
+        name: Check YAML syntax
+        args: [--allow-multiple-documents]
+        files: ^\.github/workflows/.*\.ya?ml$
+      
+      - id: check-added-large-files
+        name: Check for large files
+        args: ['--maxkb=1000']
+        
+      - id: trailing-whitespace
+        name: Remove trailing whitespace
+        
+      - id: end-of-file-fixer
+        name: Fix end of files
+
+  # Rust formatting and linting (backend)
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: Cargo Format (Rust)
+        entry: cargo fmt --all --
+        language: system
+        files: ^VCTCareerBackend/.*\.rs$
+        pass_filenames: false
+        
+      - id: cargo-clippy
+        name: Cargo Clippy (Rust Linting)
+        entry: bash -c 'cd VCTCareerBackend && cargo clippy --all-targets --all-features -- -D warnings'
+        language: system
+        files: ^VCTCareerBackend/.*\.rs$
+        pass_filenames: false
+
+  # Frontend linting (React)
+  - repo: local
+    hooks:
+      - id: biome-check
+        name: Biome Check (Frontend)
+        entry: bash -c 'cd VCTCareerFrontend && npm run check'
+        language: system
+        files: ^VCTCareerFrontend/.*\.(js|jsx|ts|tsx|json)$
+        pass_filenames: false
+
+  # GitHub Actions testing with act (optional, slower)
+  - repo: local
+    hooks:
+      - id: test-github-actions
+        name: Test GitHub Actions (Fast validation only)
+        entry: bash -c './scripts/test-github-actions.sh validate'
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
+        pass_filenames: false
+        # Comment out the line below to enable GitHub Actions testing in pre-commit
+        # This is disabled by default because it can be slow
+        stages: [manual]
