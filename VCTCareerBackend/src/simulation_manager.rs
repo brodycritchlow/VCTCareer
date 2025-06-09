@@ -57,6 +57,17 @@ fn safe_lock<T>(mutex: &Arc<Mutex<T>>) -> Result<MutexGuard<T>, String> {
         .map_err(|e| format!("Failed to acquire lock: {}", e))
 }
 
+// Convert skill values to 1-100 scale, handling both 0.0-1.0 and 1-100 input ranges
+fn convert_skill_to_1_100_scale(skill_value: f32) -> u32 {
+    if skill_value <= 1.0 {
+        // Input is in 0.0-1.0 range, convert to 1-100
+        (skill_value * 100.0).clamp(1.0, 100.0) as u32
+    } else {
+        // Input is already in 1-100 range
+        skill_value.clamp(1.0, 100.0) as u32
+    }
+}
+
 pub type SimulationManager = Arc<Mutex<HashMap<Uuid, ValorantSimulation>>>;
 
 pub fn create_simulation_manager() -> SimulationManager {
@@ -81,10 +92,10 @@ pub fn create_simulation(
             agent,
             team,
             crate::sim::PlayerSkills {
-                aim: player_data.aim_skill,
-                hs: player_data.hs_skill,
-                movement: player_data.movement_skill,
-                util: player_data.util_skill,
+                aim: convert_skill_to_1_100_scale(player_data.aim_skill),
+                hs: convert_skill_to_1_100_scale(player_data.hs_skill),
+                movement: convert_skill_to_1_100_scale(player_data.movement_skill),
+                util: convert_skill_to_1_100_scale(player_data.util_skill),
             },
         );
 
