@@ -594,6 +594,104 @@ impl NeuralBuyPredictor {
         
         Ok(loss_value)
     }
+
+    pub fn get_learning_insights(&self) -> Option<PlayerLearningInsights> {
+        if self.training_data.is_empty() {
+            return None;
+        }
+
+        // Calculate training progress metrics
+        let total_rounds_analyzed = self.training_data.len() as u32;
+        
+        // Analyze recent performance (last 20 training examples)
+        let recent_data = self.training_data
+            .iter()
+            .rev()
+            .take(20)
+            .collect::<Vec<_>>();
+        
+        let recent_avg_impact = if recent_data.is_empty() {
+            0.0
+        } else {
+            recent_data
+                .iter()
+                .map(|(_, target)| target.overall_confidence)
+                .sum::<f32>() / recent_data.len() as f32
+        };
+
+        // Determine playstyle based on weapon preferences in training data
+        let mut weapon_usage = std::collections::HashMap::new();
+        for (_, target) in &self.training_data {
+            for (i, confidence) in target.weapon_confidences.iter().enumerate() {
+                if *confidence > 0.5 {
+                    *weapon_usage.entry(i).or_insert(0) += 1;
+                }
+            }
+        }
+
+        // Map most used weapon index to actual weapon
+        let most_successful_weapon = weapon_usage
+            .iter()
+            .max_by_key(|(_, &count)| count)
+            .and_then(|(&weapon_idx, _)| {
+                match weapon_idx {
+                    0 => Some(Weapon::Classic),
+                    1 => Some(Weapon::Ghost),
+                    2 => Some(Weapon::Sheriff),
+                    3 => Some(Weapon::Spectre),
+                    4 => Some(Weapon::Bulldog),
+                    5 => Some(Weapon::Guardian),
+                    6 => Some(Weapon::Phantom),
+                    7 => Some(Weapon::Vandal),
+                    8 => Some(Weapon::Marshal),
+                    9 => Some(Weapon::Operator),
+                    _ => None,
+                }
+            });
+
+        // Determine playstyle based on weapon preferences and behavior patterns
+        let current_playstyle = if weapon_usage.get(&9).unwrap_or(&0) > &(total_rounds_analyzed / 3) {
+            // Frequent Operator usage
+            PlaystylePattern::Conservative
+        } else if weapon_usage.get(&6).unwrap_or(&0) + weapon_usage.get(&7).unwrap_or(&0) > (total_rounds_analyzed / 2) {
+            // Frequent rifle usage
+            PlaystylePattern::Aggressive
+        } else {
+            // Mixed weapon usage
+            PlaystylePattern::Adaptive
+        };
+
+        // Calculate learning trend based on recent vs earlier performance
+        let learning_trend = if total_rounds_analyzed >= 40 {
+            let early_avg = self.training_data
+                .iter()
+                .take(20)
+                .map(|(_, target)| target.overall_confidence)
+                .sum::<f32>() / 20.0;
+            
+            let improvement = recent_avg_impact - early_avg;
+            if improvement > 0.1 {
+                "Improving".to_string()
+            } else if improvement < -0.1 {
+                "Declining".to_string()
+            } else {
+                "Stable".to_string()
+            }
+        } else {
+            "Learning".to_string()
+        };
+
+        Some(PlayerLearningInsights {
+            player_id: 0, // Will be set by the caller
+            total_rounds_analyzed,
+            current_playstyle,
+            recent_avg_impact,
+            most_successful_weapon,
+            adaptation_rate: self.learning_rate as f32,
+            learning_trend,
+            confidence_score: recent_avg_impact,
+        })
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -2926,25 +3024,6 @@ impl ValorantSimulation {
         errors
     }
 
-    pub fn train_neural_networks(&mut self) -> HashMap<u32, f32> {
-        let mut training_losses = HashMap::new();
-        
-        for player in self.players.values_mut() {
-            if let Some(ref mut predictor) = player.neural_predictor {
-                match predictor.train_step() {
-                    Ok(loss) => {
-                        training_losses.insert(player.id, loss);
-                    }
-                    Err(_) => {
-                        // Training failed, continue with other players
-                        training_losses.insert(player.id, f32::INFINITY);
-                    }
-                }
-            }
-        }
-        
-        training_losses
-    }
 
     pub fn get_players(&self) -> &HashMap<u32, Player> {
         &self.players
@@ -3502,6 +3581,62 @@ impl ValorantSimulation {
             utility_priority: (buy_decision.abilities_budget as f32 / 1200.0) * outcome.round_impact_score,
             overall_confidence: outcome.round_impact_score,
         }
+    }
+    
+    /// Enable neural learning for all players in the simulation
+    pub fn enable_neural_learning_for_all_players(&mut self) -> Vec<String> {
+        let mut errors = Vec::new();
+        
+        for (player_id, player) in self.players.iter_mut() {
+            match player.enable_neural_learning() {
+                Ok(_) => {
+                    // Success - neural learning enabled
+                }
+                Err(e) => {
+                    errors.push(format!("Player {}: {}", player_id, e));
+                }
+            }
+        }
+        
+        errors
+    }
+    
+    /// Enable traditional ML for all players (existing adaptive preferences system)
+    pub fn enable_ml_for_all_players(&mut self) {
+        for player in self.players.values_mut() {
+            player.adaptive_preferences = Some(AdaptivePreferences::new());
+            player.performance_tracker = Some(PerformanceTracker::new());
+        }
+    }
+    
+    /// Train neural networks for all players and return loss values
+    pub fn train_neural_networks(&mut self) -> HashMap<u32, f32> {
+        let mut training_losses = HashMap::new();
+        
+        // For each player with neural learning enabled
+        for (player_id, player) in self.players.iter_mut() {
+            if let Some(ref mut predictor) = player.neural_predictor {
+                // Get recent training examples (simplified - in real implementation would use actual training data)
+                match predictor.train_step() {
+                    Ok(loss) => {
+                        training_losses.insert(*player_id, loss);
+                    }
+                    Err(_) => {
+                        // Training failed, continue with other players
+                        training_losses.insert(*player_id, f32::INFINITY);
+                    }
+                }
+            }
+        }
+        
+        training_losses
+    }
+    
+    /// Get learning insights for a specific player
+    pub fn get_player_learning_insights(&self, player_id: u32) -> Option<PlayerLearningInsights> {
+        let mut insights = self.players.get(&player_id)?.neural_predictor.as_ref()?.get_learning_insights()?;
+        insights.player_id = player_id;
+        Some(insights)
     }
 }
 
